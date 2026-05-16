@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+releases/
+out/
+.vite/
+
+# Nested installer build output
+installer/node_modules/
+installer/dist/
+installer/release/
+installer/releases/
+installer/out/
+
+# Local/private tooling
+.claude/
+.codex/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Environment and local overrides
+.env
+.env.*
+!.env.example
+*.local
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

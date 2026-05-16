@@ -1,0 +1,49 @@
+{
+  "name": "axon-setup",
+  "version": "1.0.4",
+  "private": true,
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "dist": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\prebuild.ps1 && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "local.axon.setup",
+    "productName": "Axon Setup",
+    "asar": true,
+    "directories": {
+      "output": "../release-installer-${version}"
+    },
+    "icon": "build/icon.ico",
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "index.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../release/Axon-x64.exe",
+        "to": "nsis.exe"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator",
+      "signAndEditExecutable": false,
+      "target": [
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "Axon-Setup-${version}.exe"
+    }
+  }
+}
