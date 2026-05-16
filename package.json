@@ -13,7 +13,10 @@
     "preview": "vite preview --host 127.0.0.1",
     "dist": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win nsis --x64",
     "portable": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win portable --x64",
-    "dist:setup": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win nsis --x64 && cd installer && npm install && npm run dist"
+    "dist:setup": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win nsis --x64 && cd installer && npm install && npm run dist",
+    "dist:cross:linux": "npm run build && electron-builder --config build/electron-builder.cross.json --linux",
+    "dist:cross:mac": "npm run build && electron-builder --config build/electron-builder.cross.json --mac",
+    "dist:cross": "npm run build && electron-builder --config build/electron-builder.cross.json --linux --mac"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

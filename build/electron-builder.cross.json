@@ -1,0 +1,46 @@
+{
+  "appId": "local.axon.studio",
+  "productName": "Axon",
+  "directories": {
+    "output": "releases-cross/${version}"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "asar": true,
+  "mac": {
+    "category": "public.app-category.productivity",
+    "identity": null,
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+  },
+  "linux": {
+    "category": "Utility",
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      },
+      {
+        "target": "deb",
+        "arch": ["x64"]
+      },
+      {
+        "target": "tar.gz",
+        "arch": ["x64"]
+      }
+    ],
+    "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+  }
+}

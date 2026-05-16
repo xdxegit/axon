@@ -29,7 +29,15 @@ Full visual setup wizard:
 npm.cmd run dist:setup
 ```
 
+Experimental cross-platform app release set:
+
+```powershell
+npm.cmd run dist:cross:linux
+npm.cmd run dist:cross:mac
+```
+
 Build artifacts are created in `release/`, `release-installer-*`, or `releases/` depending on the packaging flow.
+Cross-platform artifacts are created in `releases-cross/<version>/`.
 
 ## Runtime Bootstrap
 
