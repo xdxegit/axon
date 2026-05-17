@@ -11,12 +11,15 @@ import {
   AlertCircle,
   Download,
   Eraser,
+  FileText,
+  Image as ImageIcon,
   Info,
   KeyRound,
   Loader2,
   MessageSquarePlus,
   Minus,
   Moon,
+  Paperclip,
   PlayCircle,
   RefreshCw,
   RotateCcw,
@@ -32,6 +35,7 @@ import {
   Wand2,
   X
 } from "lucide-react";
+import mammoth from "mammoth";
 import "./styles.css";
 
 const STORAGE_KEY = "axon:v1";
@@ -234,6 +238,122 @@ function formatModelName(rawId) {
   return pretty;
 }
 
+// ── Attachments ──────────────────────────────────────────────────────────────
+// Limits chosen to stay well under typical provider request size caps. Images get
+// base64-encoded so 4 MB of raw bytes becomes ~5.4 MB of payload per image; docx
+// text is unbounded in the file but we cap extracted text at ~120 K chars (~30 K
+// tokens) before splitting / truncating with an explicit notice.
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;     // 4 MB per image
+const MAX_DOCX_BYTES  = 25 * 1024 * 1024;    // 25 MB per docx file
+const MAX_DOCX_CHARS  = 120_000;             // hard cap on extracted text per file
+const ACCEPTED_IMAGE_MIME = /^image\/(png|jpe?g|gif|webp|bmp|svg\+xml)$/i;
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function isDocxFile(file) {
+  if (!file) return false;
+  if (file.name?.toLowerCase().endsWith(".docx")) return true;
+  return file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+}
+
+function isImageFile(file) {
+  if (!file) return false;
+  if (file.type && ACCEPTED_IMAGE_MIME.test(file.type)) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name || "");
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function extractDocxText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const { value } = await mammoth.extractRawText({ arrayBuffer });
+  const clean = (value || "").replace(/\u0000/g, "").trim();
+  if (clean.length > MAX_DOCX_CHARS) {
+    return clean.slice(0, MAX_DOCX_CHARS) + `\n\n[…усечено: показано ${MAX_DOCX_CHARS} из ${clean.length} символов]`;
+  }
+  return clean;
+}
+
+// Process raw File objects from the OS into renderer-friendly attachment records.
+// Returns { ok: [...], errors: [...] } so the caller can toast each error.
+async function buildAttachmentsFromFiles(files, idGen) {
+  const ok = [];
+  const errors = [];
+  for (const file of files) {
+    try {
+      if (isImageFile(file)) {
+        if (file.size > MAX_IMAGE_BYTES) {
+          errors.push(`Картинка "${file.name}" слишком большая (${formatBytes(file.size)}). Максимум ${formatBytes(MAX_IMAGE_BYTES)}.`);
+          continue;
+        }
+        const dataUrl = await readFileAsDataURL(file);
+        ok.push({
+          id: idGen(),
+          type: "image",
+          name: file.name || "screenshot.png",
+          size: file.size,
+          mime: file.type || "image/png",
+          dataUrl
+        });
+      } else if (isDocxFile(file)) {
+        if (file.size > MAX_DOCX_BYTES) {
+          errors.push(`DOCX "${file.name}" слишком большой (${formatBytes(file.size)}). Максимум ${formatBytes(MAX_DOCX_BYTES)}.`);
+          continue;
+        }
+        const text = await extractDocxText(file);
+        ok.push({
+          id: idGen(),
+          type: "docx",
+          name: file.name,
+          size: file.size,
+          text,
+          chars: text.length
+        });
+      } else {
+        errors.push(`Файл "${file.name || "без имени"}" не поддерживается. Можно прикреплять только DOCX и картинки.`);
+      }
+    } catch (e) {
+      errors.push(`Не удалось прочитать "${file.name}": ${e?.message || e}`);
+    }
+  }
+  return { ok, errors };
+}
+
+// Compose the OpenAI chat completion `content` for a single user message that
+// may carry attachments. Returns a plain string when there are no images (max
+// provider compatibility) and a multi-modal content array when at least one
+// image is attached. DOCX text always gets inlined into a leading text part.
+function composeUserContent(text, attachments) {
+  const images = attachments.filter((a) => a.type === "image");
+  const docs   = attachments.filter((a) => a.type === "docx");
+
+  let combined = text || "";
+  if (docs.length) {
+    const docBlocks = docs.map((d) => `--- Прикреплённый документ: ${d.name} ---\n${d.text}\n--- Конец документа ---`);
+    combined = [...docBlocks, combined].filter(Boolean).join("\n\n");
+  }
+
+  if (!images.length) return combined;
+
+  // Multimodal — leading text part (with all docx contents) + each image.
+  const parts = [{ type: "text", text: combined || " " }];
+  for (const img of images) {
+    parts.push({ type: "image_url", image_url: { url: img.dataUrl } });
+  }
+  return parts;
+}
+
 function getSetupDemoState() {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("setupDemo");
@@ -253,7 +373,7 @@ function getSetupDemoState() {
     installingOmniRoute: {
       bootstrap: { localReady: false, nodeAvailable: true, npmAvailable: true, omniRouteAvailable: false },
       busy: "Установка OmniRoute",
-      log: "npm install -g omniroute\nDownloading package metadata...\nInstalling OmniRoute CLI..."
+      log: "npm install -g omniroute@3.7.7\nDownloading package metadata...\nInstalling OmniRoute CLI..."
     },
     ready: {
       bootstrap: { localReady: true, nodeAvailable: true, npmAvailable: true, omniRouteAvailable: true },
@@ -292,6 +412,32 @@ function App() {
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Attachments staged for the next outgoing message. Cleared after send.
+  // Each item: { id, type: 'image'|'docx', name, size, dataUrl?, text?, chars? }.
+  const [attachments, setAttachments] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
+  const attachmentIdRef = useRef(0);
+  const nextAttachmentId = () => ++attachmentIdRef.current;
+
+  // Centralised entry point for any incoming files (picker, drop, paste). Reads
+  // them in parallel via buildAttachmentsFromFiles and toasts per-file failures.
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    if (!files.length) return;
+    const { ok, errors } = await buildAttachmentsFromFiles(files, nextAttachmentId);
+    if (ok.length) setAttachments((prev) => [...prev, ...ok]);
+    for (const msg of errors) pushToast(msg, "error");
+  }
+
+  function removeAttachment(id) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function clearAttachments() {
+    setAttachments([]);
+  }
 
   // Toast queue. Use `pushToast(text, type?)` where type ∈ {info, error, success}.
   // Errors auto-dismiss after 7s, others after 4s. Click any toast to dismiss it manually.
@@ -324,6 +470,17 @@ function App() {
     window.omni.claudeCheck()
       .then((r) => setClaudeAvailable(Boolean(r?.available)))
       .catch(() => setClaudeAvailable(false));
+  }, []);
+
+  // Forward main-process toasts (background events like the OmniRoute auto-pin
+  // downgrade) through the same toast UI the renderer uses for its own errors.
+  // Errors get longer TTL (7s) via pushToast's internal switch — matches renderer
+  // semantics so users have time to read failure details.
+  useEffect(() => {
+    if (!window.omni?.onAppToast) return;
+    return window.omni.onAppToast(({ type, text }) => {
+      if (text) pushToast(text, type || "info");
+    });
   }, []);
 
   useEffect(() => {
@@ -423,17 +580,41 @@ function App() {
 
   async function sendMessage() {
     const text = draft.trim();
-    if (!text || busy) return;
+    // Allow sending an attachment-only message (e.g. "what's in this screenshot?")
+    if ((!text && attachments.length === 0) || busy) return;
 
-    const nextMessages = [...messages, { role: "user", content: text }];
+    // Build OpenAI-compatible content (string OR array for multimodal) once and
+    // reuse it for both the chat display and the outgoing API payload.
+    const userContent = composeUserContent(text, attachments);
+
+    // The user-facing chat entry keeps a display-friendly snapshot of the
+    // attachments alongside the raw text the user typed — this way we can render
+    // thumbnails in history without re-decoding the content array.
+    const userMessage = {
+      role: "user",
+      content: userContent,
+      displayText: text,
+      attachments: attachments.length ? attachments.map((a) => ({
+        id: a.id,
+        type: a.type,
+        name: a.name,
+        size: a.size,
+        dataUrl: a.type === "image" ? a.dataUrl : undefined,
+        chars: a.type === "docx" ? a.chars : undefined
+      })) : undefined
+    };
+
+    const nextMessages = [...messages, userMessage];
     setDraft("");
+    clearAttachments();
     saveMessages(nextMessages);
     setBusy(true);
     setStatus("Модель думает...");
 
     const contextMessages = nextMessages
       .slice(contextStartIndex)
-      .filter((message) => message.role === "user" || message.role === "assistant");
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .map((message) => ({ role: message.role, content: message.content }));
 
     const apiMessages = [
       ...(settings.systemPrompt ? [{ role: "system", content: settings.systemPrompt }] : []),
@@ -715,40 +896,188 @@ function App() {
         <div className="content-grid">
           <section className="chat-surface">
             <div className="messages">
-              {messages.map((message, index) => (
-                <article key={`${message.role}-${index}`} className={cls("message", message.role)}>
-                  <div className="avatar">
-                    {message.role === "user" ? "Вы" : message.role === "error" ? "!" : <Bot size={18} />}
-                  </div>
-                  <div className="bubble">
-                    <div className="role">
-                      {message.role === "user"
-                        ? "Пользователь"
-                        : message.role === "error"
-                          ? "Ошибка"
-                          : message.role === "notice"
-                            ? "Контекст"
-                            : "Ассистент"}
+              {messages.map((message, index) => {
+                // For the user side we have a richer record: `displayText` is what
+                // they typed, `attachments` is a thumbnail-ready snapshot. For
+                // assistant/system messages we just render content as a string.
+                const isUser = message.role === "user";
+                let bodyText = "";
+                if (isUser) {
+                  bodyText = message.displayText
+                    ?? (typeof message.content === "string"
+                      ? message.content
+                      // Legacy or recovered message — pull text part out of array content.
+                      : (Array.isArray(message.content)
+                          ? message.content.filter((p) => p.type === "text").map((p) => p.text).join("\n")
+                          : ""));
+                } else {
+                  bodyText = typeof message.content === "string" ? message.content : String(message.content ?? "");
+                }
+                const atts = isUser ? (message.attachments || []) : [];
+                return (
+                  <article key={`${message.role}-${index}`} className={cls("message", message.role)}>
+                    <div className="avatar">
+                      {isUser ? "Вы" : message.role === "error" ? "!" : <Bot size={18} />}
                     </div>
-                    <p>{message.content}</p>
-                  </div>
-                </article>
-              ))}
+                    <div className="bubble">
+                      <div className="role">
+                        {isUser
+                          ? "Пользователь"
+                          : message.role === "error"
+                            ? "Ошибка"
+                            : message.role === "notice"
+                              ? "Контекст"
+                              : "Ассистент"}
+                      </div>
+                      {atts.length > 0 && (
+                        <div className="message-attachments">
+                          {atts.map((a) => (
+                            a.type === "image" && a.dataUrl ? (
+                              <a
+                                key={a.id}
+                                className="msg-img"
+                                href={a.dataUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={a.name}
+                              >
+                                <img src={a.dataUrl} alt={a.name} />
+                              </a>
+                            ) : (
+                              <div key={a.id} className="msg-doc">
+                                <FileText size={16} />
+                                <span className="msg-doc-name" title={a.name}>{a.name}</span>
+                                {a.chars != null && <span className="msg-doc-meta">{a.chars.toLocaleString()} симв.</span>}
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      )}
+                      {bodyText && <p>{bodyText}</p>}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
 
-            <div className="composer glass">
-              <textarea
-                ref={inputRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) sendMessage();
-                }}
-                placeholder="Напишите запрос к модели..."
-              />
-              <button onClick={sendMessage} disabled={busy || !draft.trim()} title="Отправить">
-                {busy ? <Loader2 className="spin" size={20} /> : <Send size={20} />}
-              </button>
+            <div
+              className={cls("composer glass", dragActive && "drag-active")}
+              onDragEnter={(event) => {
+                if (event.dataTransfer?.types?.includes("Files")) {
+                  event.preventDefault();
+                  setDragActive(true);
+                }
+              }}
+              onDragOver={(event) => {
+                if (event.dataTransfer?.types?.includes("Files")) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "copy";
+                }
+              }}
+              onDragLeave={(event) => {
+                // Only clear when the drag leaves the composer itself, not a child.
+                if (event.currentTarget.contains(event.relatedTarget)) return;
+                setDragActive(false);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragActive(false);
+                const dropped = event.dataTransfer?.files;
+                if (dropped?.length) addFiles(dropped);
+              }}
+            >
+              {attachments.length > 0 && (
+                <div className="attachment-row">
+                  {attachments.map((a) => (
+                    <div key={a.id} className={cls("attachment-chip", `attachment-${a.type}`)}>
+                      {a.type === "image" ? (
+                        <img className="attachment-thumb" src={a.dataUrl} alt={a.name} />
+                      ) : (
+                        <div className="attachment-icon"><FileText size={16} /></div>
+                      )}
+                      <div className="attachment-info">
+                        <span className="attachment-name" title={a.name}>{a.name}</span>
+                        <span className="attachment-meta">
+                          {a.type === "docx" ? `DOCX · ${a.chars.toLocaleString()} симв.` : formatBytes(a.size)}
+                        </span>
+                      </div>
+                      <button
+                        className="attachment-remove"
+                        onClick={() => removeAttachment(a.id)}
+                        title="Убрать"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="composer-row">
+                <button
+                  className="composer-attach"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy}
+                  title="Прикрепить DOCX или картинку"
+                >
+                  <Paperclip size={18} />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".docx,image/*"
+                  style={{ display: "none" }}
+                  onChange={(event) => {
+                    addFiles(event.target.files);
+                    event.target.value = ""; // allow re-selecting the same file
+                  }}
+                />
+                <textarea
+                  ref={inputRef}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) sendMessage();
+                  }}
+                  onPaste={(event) => {
+                    // Pull files out of the clipboard — covers Win+Shift+S screenshot,
+                    // Snipping Tool, drag-from-Explorer copies, etc. We DON'T preventDefault
+                    // unconditionally so text paste still works normally.
+                    const items = event.clipboardData?.items || [];
+                    const files = [];
+                    for (const item of items) {
+                      if (item.kind === "file") {
+                        const f = item.getAsFile();
+                        if (f) files.push(f);
+                      }
+                    }
+                    if (files.length) {
+                      event.preventDefault();
+                      addFiles(files);
+                    }
+                  }}
+                  placeholder={
+                    attachments.length
+                      ? "Опишите запрос к прикреплённым файлам…"
+                      : "Напишите запрос к модели… (вставка картинок через Ctrl+V, DOCX и картинки через скрепку)"
+                  }
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={busy || (!draft.trim() && attachments.length === 0)}
+                  title="Отправить (Ctrl+Enter)"
+                >
+                  {busy ? <Loader2 className="spin" size={20} /> : <Send size={20} />}
+                </button>
+              </div>
+
+              {dragActive && (
+                <div className="drop-overlay">
+                  <Paperclip size={28} />
+                  <span>Отпустите, чтобы прикрепить</span>
+                </div>
+              )}
             </div>
           </section>
 

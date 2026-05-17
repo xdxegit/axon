@@ -65,14 +65,15 @@
   Pop $1
 
   ${If} $0 != 0
-    DetailPrint "OmniRoute CLI not found. Installing with npm..."
-    nsExec::ExecToLog 'cmd /c npm install -g omniroute'
+    DetailPrint "OmniRoute CLI not found. Installing 3.7.7 with npm..."
+    ; Pinned to 3.7.7 — 3.7.9 ships with a broken "Settings" launch button.
+    nsExec::ExecToLog 'cmd /c npm install -g omniroute@3.7.7 --legacy-peer-deps --no-fund --no-audit'
     Pop $0
     ${If} $0 != 0
       MessageBox MB_ICONSTOP|MB_OK "OmniRoute CLI installation failed.$\nCheck your internet connection and npm permissions, then run this installer again."
       Abort
     ${EndIf}
-    DetailPrint "OmniRoute CLI installed."
+    DetailPrint "OmniRoute CLI 3.7.7 installed."
   ${Else}
     DetailPrint "OmniRoute CLI found."
   ${EndIf}

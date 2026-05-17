@@ -690,13 +690,26 @@ button {
 }
 
 .composer {
-  display: grid;
-  grid-template-columns: 1fr 52px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   margin: 0 clamp(20px, 5vw, 74px) 22px;
   padding: 10px;
   border-radius: 22px;
   flex-shrink: 0;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.composer.drag-active {
+  border-color: var(--accent);
+}
+
+.composer-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 52px;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .composer textarea,
@@ -723,7 +736,9 @@ button {
   padding: 16px;
 }
 
-.composer button {
+/* Send button — the only primary button inside .composer-row that isn't the
+   attach affordance. */
+.composer-row > button:not(.composer-attach) {
   display: grid;
   place-items: center;
   height: 58px;
@@ -734,9 +749,185 @@ button {
     linear-gradient(135deg, var(--accent), var(--accent-strong));
 }
 
-.composer button:disabled {
+.composer-row > button:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+/* Paperclip / attach button — quieter than the send affordance. */
+.composer-attach {
+  display: grid;
+  place-items: center;
+  height: 58px;
+  border-radius: 16px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--border-soft);
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.composer-attach:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border);
+}
+
+.composer-attach:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Attachment chips above the textarea ──────────────────────────────────── */
+.attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 2px 0;
+}
+
+.attachment-chip {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  max-width: 280px;
+  min-width: 0;
+}
+
+.attachment-chip.attachment-image {
+  border-color: rgba(45, 212, 191, 0.32);
+}
+
+.attachment-thumb {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
+
+.attachment-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: rgba(124, 58, 237, 0.22);
+  color: #c4b5fd;
+}
+
+.attachment-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.attachment-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-meta {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-remove {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.attachment-remove:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Drop overlay ─────────────────────────────────────────────────────────── */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 22px;
+  background: rgba(45, 212, 191, 0.12);
+  border: 2px dashed var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 5;
+  animation: drop-in 160ms ease both;
+}
+
+@keyframes drop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Attachments rendered inside chat history bubbles ─────────────────────── */
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.msg-img {
+  display: block;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  background: rgba(0, 0, 0, 0.25);
+  max-width: 280px;
+}
+
+.msg-img img {
+  display: block;
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: cover;
+}
+
+.msg-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  font-size: 12.5px;
+}
+
+.msg-doc-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.msg-doc-meta {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .settings-drawer {
