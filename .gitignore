@@ -6,6 +6,9 @@ dist/
 release/
 releases/
 releases-cross/
+release-sets/
+release-installer-1.1.0-beta/
+release-installer-1.0.4/
 out/
 .vite/
 

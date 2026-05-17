@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("omni", {
   startOmniRoute: () => ipcRenderer.invoke("bootstrap:start-omniroute"),
   claudeCheck: () => ipcRenderer.invoke("claude:check"),
   claudeLaunch: (payload) => ipcRenderer.invoke("claude:launch", payload),
+  openLogsFolder: () => ipcRenderer.invoke("logs:open"),
+  logsPath: () => ipcRenderer.invoke("logs:path"),
 
   // Main-process initiated toast — used for background events (OmniRoute auto-
   // downgrade, etc.) where the renderer wouldn't otherwise know to surface them.

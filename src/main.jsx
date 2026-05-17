@@ -40,6 +40,7 @@ import "./styles.css";
 
 const STORAGE_KEY = "axon:v1";
 const PROVIDER_GUIDE_KEY = "axon:provider-guide-seen";
+const NICKNAME_KEY = "axon:nickname";
 
 const welcomeMessage = {
   role: "assistant",
@@ -275,6 +276,90 @@ function readFileAsDataURL(file) {
   });
 }
 
+// Downscale large screenshots before encoding to dataUrl. Many providers cap
+// per-image bytes around 5 MB and downscale internally — doing it here keeps
+// the request body small and avoids 413/400 errors from OmniRoute or whichever
+// backend it routes to. SVGs and animated GIFs are left untouched.
+async function loadImageBitmap(file) {
+  // SVG / GIF: skip downscale entirely — preserves vector / animation.
+  if (/svg|gif/i.test(file.type)) return null;
+  try {
+    return await createImageBitmap(file);
+  } catch {
+    return null;
+  }
+}
+
+async function fileToCompactDataUrl(file, maxEdge = 1600, jpegQuality = 0.85) {
+  const bitmap = await loadImageBitmap(file);
+  if (!bitmap) return readFileAsDataURL(file);
+
+  const { width, height } = bitmap;
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const w = Math.round(width * scale);
+  const h = Math.round(height * scale);
+
+  // ALWAYS re-encode through canvas to JPEG. PNGs passed through verbatim sometimes
+  // get mangled by OmniRoute's PNG→Anthropic MIME-translation step: the request
+  // arrives at Claude, tokens are billed for it, but the image content silently
+  // becomes "unavailable" in the model's view. JPEG round-trip dodges the bug.
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  // Transparent PNGs would otherwise turn black on a JPEG; paint a white floor.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  return canvas.toDataURL("image/jpeg", jpegQuality);
+}
+
+// Crude vision-capability hint based on the model id. Used only to warn the user
+// — we don't block sending. Models in OmniRoute can be arbitrary; this is a
+// best-effort heuristic, returning true (assume vision) when we're not sure.
+function isLikelyVisionModel(modelId) {
+  if (!modelId || modelId === "auto") return true;
+  const id = modelId.toLowerCase();
+  // These OmniRoute provider routes advertise image input in /v1/models, but
+  // data-URI images currently arrive at the backend as "(unavailable)".
+  // Keep this conservative and route image requests through known-good Gemini
+  // variants instead of letting the user burn a request on a blind model.
+  if (/^(kr|kiro|gh|github)\//.test(id)) return false;
+  if (/^antigravity\/claude/.test(id)) return false;
+  if (/(vision|vl\b|multimodal|image)/.test(id)) return true;
+  if (/claude-(3|4|5|6|7|opus|sonnet|haiku)/.test(id)) return true;
+  if (/gpt-?(4o|5|5-mini|5-nano|4\.\d|4-turbo)/.test(id)) return true;
+  if (/gemini-?(1\.5|2|2\.5|3)/.test(id)) return true;
+  if (/grok-?(2|3|4|vision)/.test(id)) return true;
+  if (/pixtral|llava|qwen.*-?vl/.test(id)) return true;
+  // Text-only families we know about.
+  if (/(^|\/)(o1|o3|o4)(-|$)/.test(id)) return false;
+  if (/-embed|-tts|whisper|-instruct(?!-vision)/.test(id)) return false;
+  if (/gpt-3\.5/.test(id)) return false;
+  return true; // err on the side of trusting the user
+}
+
+function isKnownWorkingImageRoute(modelId) {
+  const id = String(modelId || "").toLowerCase();
+  return /^antigravity\/gemini-3-flash-preview$/.test(id);
+}
+
+function pickImageRoute(modelId, availableModels = []) {
+  if (isKnownWorkingImageRoute(modelId)) return modelId;
+
+  const ids = availableModels.map((model) => model?.id).filter(Boolean);
+  const priority = [
+    "antigravity/gemini-3-flash-preview",
+    "antigravity/gemini-3.1-flash-image",
+    "antigravity/gemini-3-pro-image-preview",
+    "github/gemini-3-flash-preview",
+    "gh/gemini-3-flash-preview"
+  ];
+
+  return priority.find((id) => ids.includes(id)) || ids.find((id) => /gemini.*flash/i.test(id)) || modelId;
+}
+
 async function extractDocxText(file) {
   const arrayBuffer = await file.arrayBuffer();
   const { value } = await mammoth.extractRawText({ arrayBuffer });
@@ -297,7 +382,7 @@ async function buildAttachmentsFromFiles(files, idGen) {
           errors.push(`Картинка "${file.name}" слишком большая (${formatBytes(file.size)}). Максимум ${formatBytes(MAX_IMAGE_BYTES)}.`);
           continue;
         }
-        const dataUrl = await readFileAsDataURL(file);
+        const dataUrl = await fileToCompactDataUrl(file);
         ok.push({
           id: idGen(),
           type: "image",
@@ -347,9 +432,11 @@ function composeUserContent(text, attachments) {
   if (!images.length) return combined;
 
   // Multimodal — leading text part (with all docx contents) + each image.
+  // `detail: "auto"` is OpenAI's vision spec — some backends require it explicitly
+  // (Anthropic/Gemini behind OmniRoute) instead of treating it as the default.
   const parts = [{ type: "text", text: combined || " " }];
   for (const img of images) {
-    parts.push({ type: "image_url", image_url: { url: img.dataUrl } });
+    parts.push({ type: "image_url", image_url: { url: img.dataUrl, detail: "auto" } });
   }
   return parts;
 }
@@ -405,6 +492,7 @@ function App() {
     () => localStorage.getItem(PROVIDER_GUIDE_KEY) !== "true"
   );
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [logsPath, setLogsPath] = useState("");
   const [status, setStatus] = useState("Готово");
   const [claudeBusy, setClaudeBusy] = useState(false);
   const [claudeAvailable, setClaudeAvailable] = useState(true);
@@ -413,6 +501,41 @@ function App() {
   const toastIdRef = useRef(0);
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Nickname — persisted across sessions. `null` triggers the first-run welcome
+  // modal. After save it gets injected into the system prompt so the model
+  // addresses the user by name.
+  const [nickname, setNickname] = useState(() => {
+    const stored = localStorage.getItem(NICKNAME_KEY);
+    return stored ? stored.trim() : null;
+  });
+  const [nicknameDraft, setNicknameDraft] = useState("");
+  // The welcome modal only shows on the very first run (no value stored).
+  const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(NICKNAME_KEY));
+
+  function saveNickname(value) {
+    const cleaned = (value || "").trim().slice(0, 40);
+    if (cleaned) {
+      localStorage.setItem(NICKNAME_KEY, cleaned);
+      setNickname(cleaned);
+    } else {
+      localStorage.removeItem(NICKNAME_KEY);
+      setNickname(null);
+    }
+  }
+
+  function finishWelcome() {
+    saveNickname(nicknameDraft);
+    setWelcomeOpen(false);
+  }
+
+  function skipWelcome() {
+    // Mark the welcome as seen even when skipped, so we don't nag on every launch.
+    if (!localStorage.getItem(NICKNAME_KEY)) {
+      localStorage.setItem(NICKNAME_KEY, "");
+    }
+    setWelcomeOpen(false);
+  }
 
   // Attachments staged for the next outgoing message. Cleared after send.
   // Each item: { id, type: 'image'|'docx', name, size, dataUrl?, text?, chars? }.
@@ -470,6 +593,15 @@ function App() {
     window.omni.claudeCheck()
       .then((r) => setClaudeAvailable(Boolean(r?.available)))
       .catch(() => setClaudeAvailable(false));
+  }, []);
+
+  // Fetch the userData path once so we can render it inside About — saves users
+  // from manually figuring out where %APPDATA%\Axon\axon-main.log actually lives.
+  useEffect(() => {
+    if (!window.omni?.logsPath) return;
+    window.omni.logsPath()
+      .then((r) => { if (r?.ok && r.path) setLogsPath(r.path); })
+      .catch(() => {});
   }, []);
 
   // Forward main-process toasts (background events like the OmniRoute auto-pin
@@ -583,6 +715,18 @@ function App() {
     // Allow sending an attachment-only message (e.g. "what's in this screenshot?")
     if ((!text && attachments.length === 0) || busy) return;
 
+    // Pre-flight: warn (don't block) if the user attached images but the selected
+    // model probably can't see them. OmniRoute will still route the request, but
+    // most likely the backend will respond with a generic "I can't see images"
+    // message — surface a hint so the user knows to switch model.
+    const hasImage = attachments.some((a) => a.type === "image");
+    if (hasImage && !isLikelyVisionModel(settings.model)) {
+      pushToast(
+        `Модель «${formatModelName(settings.model)}» может не видеть картинки. Если ассистент скажет «не могу прочитать изображение» — выберите Claude, GPT-4o, Gemini или Grok Vision.`,
+        "info"
+      );
+    }
+
     // Build OpenAI-compatible content (string OR array for multimodal) once and
     // reuse it for both the chat display and the outgoing API payload.
     const userContent = composeUserContent(text, attachments);
@@ -616,8 +760,16 @@ function App() {
       .filter((message) => message.role === "user" || message.role === "assistant")
       .map((message) => ({ role: message.role, content: message.content }));
 
+    // Compose the system prompt: user's own prompt + a nickname directive so
+    // the assistant addresses the user by name. The nickname comes from the
+    // first-run welcome modal and is persisted in localStorage.
+    const systemParts = [];
+    if (settings.systemPrompt) systemParts.push(settings.systemPrompt);
+    if (nickname) systemParts.push(`Имя пользователя: ${nickname}. Обращайся к нему по имени.`);
+    const systemPrompt = systemParts.join("\n\n");
+
     const apiMessages = [
-      ...(settings.systemPrompt ? [{ role: "system", content: settings.systemPrompt }] : []),
+      ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
       ...contextMessages
     ];
 
@@ -637,6 +789,24 @@ function App() {
         saveSettings({ ...settings, model });
       }
 
+      if (hasImage && !isKnownWorkingImageRoute(model)) {
+        let chatModels = models;
+        if (!chatModels.length) {
+          const result = await window.omni.listModels(settings);
+          chatModels = getChatModels(result);
+          setModels(chatModels);
+        }
+
+        const routedModel = pickImageRoute(model, chatModels);
+        if (routedModel !== model) {
+          pushToast(
+            `Для картинки Axon временно использует ${formatModelName(routedModel)}: выбранный route ${formatModelName(model)} сейчас получает изображения как unavailable.`,
+            "info"
+          );
+          model = routedModel;
+        }
+      }
+
       const response = await window.omni.chat({
         settings,
         model,
@@ -651,6 +821,32 @@ function App() {
         "Ответ получен, но текст не найден в стандартном формате.";
       saveMessages([...nextMessages, { role: "assistant", content }]);
       setStatus("Ответ получен");
+
+      // Heuristic vision-failure detection: if the user attached an image and
+      // the assistant's reply hints the image didn't actually arrive, OmniRoute
+      // most likely substituted "(unavailable)" or stubbed the image_url part.
+      // Surface a strong toast with a link to the request/response dump.
+      if (hasImage && typeof content === "string") {
+        const lower = content.toLowerCase();
+        const failureSignals = [
+          "(unavailable)",
+          "не могу видеть",
+          "не могу прочитать изображение",
+          "не вижу изображение",
+          "не загрузилось",
+          "i can't see",
+          "i cannot see",
+          "i'm unable to view",
+          "no image",
+          "image is not available"
+        ];
+        if (failureSignals.some((s) => lower.includes(s))) {
+          pushToast(
+            `Картинка не дошла до модели (${formatModelName(settings.model)}). Откройте About → «Открыть папку с логами» и посмотрите last-chat-request.json / last-chat-response.json.`,
+            "error"
+          );
+        }
+      }
     } catch (error) {
       const cleanMsg = cleanIpcError(error) || error.message || "Ошибка запроса";
       saveMessages([...nextMessages, { role: "error", content: cleanMsg }]);
@@ -1060,7 +1256,9 @@ function App() {
                   placeholder={
                     attachments.length
                       ? "Опишите запрос к прикреплённым файлам…"
-                      : "Напишите запрос к модели… (вставка картинок через Ctrl+V, DOCX и картинки через скрепку)"
+                      : nickname
+                        ? `${nickname}, напишите запрос к модели… (Ctrl+V для картинок, скрепка для файлов)`
+                        : "Напишите запрос к модели… (вставка картинок через Ctrl+V, DOCX и картинки через скрепку)"
                   }
                 />
                 <button
@@ -1163,6 +1361,40 @@ function App() {
           </aside>
         </div>
       </section>
+
+      {/* First-run welcome — asks for a nickname so the assistant can address
+          the user by name. Shown only when no nickname has been saved yet. */}
+      {welcomeOpen && (
+        <div className="setup-overlay">
+          <section className="welcome-modal glass">
+            <div className="welcome-icon">
+              <BrainCircuit size={28} />
+            </div>
+            <h2 className="welcome-title">Добро пожаловать в Axon</h2>
+            <p className="welcome-tagline">be better with me</p>
+            <p className="welcome-desc">
+              Как к вам обращаться? Имя сохранится локально и будет добавлено в системный промпт, чтобы ассистент знал, как вас называть.
+            </p>
+            <input
+              className="welcome-input"
+              value={nicknameDraft}
+              onChange={(event) => setNicknameDraft(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") finishWelcome(); }}
+              placeholder="Например, Klaiz"
+              autoFocus
+              maxLength={40}
+            />
+            <div className="welcome-actions">
+              <button className="primary-action" onClick={finishWelcome} disabled={!nicknameDraft.trim()}>
+                Продолжить
+              </button>
+              <button className="ghost-link" onClick={skipWelcome}>
+                Пропустить
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {needsLocalSetup && (
         <div className="setup-overlay">
@@ -1323,7 +1555,7 @@ function App() {
             <h2 className="about-title">Axon</h2>
             <p className="about-tagline">be better with me</p>
             <div className="about-meta">
-              <span>v1.0.3</span>
+              <span>v1.1.1-beta</span>
               <span>·</span>
               <span>crafted by{" "}
                 <button className="about-link" onClick={() => window.open("https://github.com/xdxegit")}>
@@ -1332,6 +1564,32 @@ function App() {
               </span>
             </div>
             <p className="about-desc">Desktop AI workspace powered by OmniRoute.</p>
+            <div className="about-nickname">
+              <span className="about-nickname-label">Имя обращения</span>
+              <input
+                className="about-nickname-input"
+                value={nickname || ""}
+                onChange={(event) => saveNickname(event.target.value)}
+                placeholder="Без обращения"
+                maxLength={40}
+              />
+            </div>
+            <button
+              className="ghost-button about-logs-button"
+              onClick={() => window.omni?.openLogsFolder?.()}
+              title="Откроется в Проводнике"
+            >
+              <FileText size={15} />
+              Открыть папку с логами
+            </button>
+            {logsPath && (
+              <div className="about-logs-path" title="Скопируйте путь в Проводник">
+                {logsPath}
+              </div>
+            )}
+            <p className="about-logs-hint">
+              В папке появятся axon-main.log, last-chat-request.json и last-chat-response.json после первого запроса с прикреплённой картинкой.
+            </p>
           </section>
         </div>
       )}
