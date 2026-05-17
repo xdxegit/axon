@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { execFile, spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -19,10 +20,16 @@ const REQUIRED_OMNIROUTE_VERSION = "3.7.7";
 function appendLog(message) {
   try {
     const dir = app.getPath("userData");
+    // Make sure the userData dir exists — Electron creates it lazily on first
+    // use, and appendFileSync would fail if we ran before any other access.
+    fs.mkdirSync(dir, { recursive: true });
     const line = `[${new Date().toISOString()}] ${message}\n`;
-    require("node:fs").appendFileSync(path.join(dir, "axon-main.log"), line, "utf8");
-  } catch {
-    // logging must never crash the app
+    fs.appendFileSync(path.join(dir, "axon-main.log"), line, "utf8");
+  } catch (err) {
+    // logging must never crash the app — but at least surface it in the
+    // attached DevTools console so we don't get another silent black hole.
+    // eslint-disable-next-line no-console
+    console.error("appendLog failed:", err);
   }
 }
 
@@ -93,6 +100,12 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // Always seed the log file with a startup banner so the user has *something*
+  // to look at when they open "Папка с логами" before sending any chat. Prior
+  // versions only wrote on errors / chat events, leading to confused "а где?"
+  // when the folder showed no .log/.json at all.
+  appendLog(`=== Axon ${app.getVersion()} start === platform=${process.platform} isDev=${isDev} userData=${app.getPath("userData")}`);
+
   // Create window first so the user sees the UI immediately. The OmniRoute
   // version check + downgrade can take 30–60s on slow npm registries; running
   // it in the background avoids a blank-screen startup.
@@ -344,6 +357,44 @@ ipcMain.handle("omni:list-models", async (_event, settings) => {
   return Array.isArray(payload?.data) ? payload.data : [];
 });
 
+// Strip base64 data URIs out of a deep-cloned payload before logging. The result
+// keeps the structure (so we can verify image_url parts WERE in the request) but
+// drops the multi-MB blobs — the log file stays small enough to share.
+function redactDataUris(node) {
+  if (Array.isArray(node)) {
+    node.forEach(redactDataUris);
+  } else if (node && typeof node === "object") {
+    for (const k of Object.keys(node)) {
+      const v = node[k];
+      if (k === "url" && typeof v === "string" && v.startsWith("data:")) {
+        node[k] = `[data URI length=${v.length}, head=${v.slice(0, 64)}...]`;
+      } else {
+        redactDataUris(v);
+      }
+    }
+  }
+  return node;
+}
+
+// Dump the most recent chat exchange to %APPDATA%/Axon/last-chat-*.json so users
+// can attach them when reporting bugs (e.g. "image came through as
+// (unavailable)" — the dump shows whether our request actually contained
+// image_url parts and what OmniRoute sent back).
+function writeChatDump(name, payload) {
+  try {
+    const dir = app.getPath("userData");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, name);
+    // structuredClone may not exist on older Electrons; fall back to JSON round-trip.
+    const clone = typeof structuredClone === "function"
+      ? structuredClone(payload)
+      : JSON.parse(JSON.stringify(payload));
+    fs.writeFileSync(file, JSON.stringify(redactDataUris(clone), null, 2), "utf8");
+  } catch (e) {
+    appendLog(`writeChatDump(${name}) failed: ${e.message}`);
+  }
+}
+
 ipcMain.handle("omni:chat", async (_event, request) => {
   const baseUrl = normalizeBaseUrl(request?.settings?.baseUrl);
   const headers = { "Content-Type": "application/json" };
@@ -357,18 +408,70 @@ ipcMain.handle("omni:chat", async (_event, request) => {
     stream: false
   };
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body)
+  // Count parts for the summary line in axon-main.log. Lets us quickly check
+  // "did the image even reach main process" without parsing the full dump.
+  let imagePartCount = 0;
+  let textPartCount = 0;
+  for (const m of body.messages) {
+    if (Array.isArray(m.content)) {
+      for (const part of m.content) {
+        if (part?.type === "image_url") imagePartCount++;
+        else if (part?.type === "text") textPartCount++;
+      }
+    } else if (typeof m.content === "string") {
+      textPartCount++;
+    }
+  }
+  appendLog(`omni:chat → model=${body.model} messages=${body.messages.length} textParts=${textPartCount} imageParts=${imagePartCount}`);
+  writeChatDump("last-chat-request.json", { url: `${baseUrl}/chat/completions`, body });
+
+  const startedAt = Date.now();
+  let response, payload;
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body)
+    });
+    payload = await readJsonResponse(response);
+  } catch (err) {
+    appendLog(`omni:chat fetch error: ${err.message}`);
+    writeChatDump("last-chat-response.json", { error: err.message, durationMs: Date.now() - startedAt });
+    throw err;
+  }
+
+  appendLog(`omni:chat ← status=${response.status} durationMs=${Date.now() - startedAt}`);
+  writeChatDump("last-chat-response.json", {
+    status: response.status,
+    statusText: response.statusText,
+    durationMs: Date.now() - startedAt,
+    body: payload
   });
-  const payload = await readJsonResponse(response);
 
   if (!response.ok) {
     throw new Error(payload?.error?.message || `Chat request failed: ${response.status}`);
   }
 
   return payload;
+});
+
+// Opens %APPDATA%/Axon in Explorer so the user can grab axon-main.log,
+// last-chat-request.json, last-chat-response.json for bug reports.
+ipcMain.handle("logs:open", async () => {
+  try {
+    const dir = app.getPath("userData");
+    await shell.openPath(dir);
+    return { ok: true, path: dir };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Just returns the userData path so the renderer can render it next to the
+// "Open logs folder" button. Lets users copy it into a file manager directly.
+ipcMain.handle("logs:path", async () => {
+  try { return { ok: true, path: app.getPath("userData") }; }
+  catch (err) { return { ok: false, error: err.message }; }
 });
 
 ipcMain.handle("bootstrap:status", async () => getBootstrapStatus());

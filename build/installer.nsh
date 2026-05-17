@@ -79,7 +79,18 @@
   ${EndIf}
 
   launch_api:
-  DetailPrint "Starting local OmniRoute API..."
-  nsExec::Exec 'cmd /c start "" /min omniroute'
-  Sleep 2500
+  ; Don't double-launch — when Axon was already running before this install,
+  ; OmniRoute is almost certainly already listening on 20128. Starting another
+  ; copy errors out with "port in use" and confuses the user. Just probe first.
+  DetailPrint "Checking local OmniRoute API on http://localhost:20128 ..."
+  nsExec::ExecToStack 'cmd /c curl --max-time 2 -s -o nul -w "%%{http_code}" http://localhost:20128/v1/models'
+  Pop $0
+  Pop $1
+  ${If} $1 == "200"
+    DetailPrint "OmniRoute API already running — skipping launch."
+  ${Else}
+    DetailPrint "Starting local OmniRoute API..."
+    nsExec::Exec 'cmd /c start "" /min omniroute'
+    Sleep 2500
+  ${EndIf}
 !macroend

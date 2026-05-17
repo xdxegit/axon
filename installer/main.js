@@ -199,7 +199,22 @@ ipcMain.handle('run-step', async (_e, step) => {
     return await runStep(step)
   } catch (err) {
     setupLog(`run-step ${step} threw: ${err?.stack || err}`)
-    return { success: false, message: `Internal setup error: ${err?.message || err}\n\nSee log: ${SETUP_LOG}` }
+    // Inline the tail of axon-setup.log so the user sees concrete output
+    // immediately instead of being told to find a temp file that under
+    // elevation sometimes lives in a path they don't have access to.
+    let tail = ''
+    try {
+      if (fs.existsSync(SETUP_LOG)) {
+        const text = fs.readFileSync(SETUP_LOG, 'utf8')
+        tail = text.trim().split(/\r?\n/).slice(-20).join('\n')
+      }
+    } catch { /* ignore */ }
+    return {
+      success: false,
+      message:
+        `Internal setup error: ${err?.message || err}` +
+        (tail ? `\n\nSetup log tail (file: ${SETUP_LOG}):\n${tail}` : `\n\nSetup log path: ${SETUP_LOG} (file not yet created)`)
+    }
   }
 })
 
@@ -333,17 +348,27 @@ async function runStep(step) {
       } catch { /* ignore */ }
       setupLog(`install-app: pre-install mtime=${preInstallMtime}`)
 
-      // 1) Kill any running Axon.exe (the installed app — NOT our own setup wizard).
+      // 1) Kill any running Axon.exe AND OmniRoute (which Axon spawns on launch).
       //    DO NOT taskkill "Axon Setup.exe" — that's literally us, and `/T` would
-      //    take our entire process tree down with it. Using /FI PID ne <self> to
-      //    exclude ourselves is defence-in-depth in case a stale wizard exists.
-      emitProgress({ stage: 'Closing running Axon instances' })
+      //    take our entire process tree down with it. /FI PID ne <self> is
+      //    defence-in-depth in case a stale wizard ever shares our exe name.
+      //    OmniRoute commonly remains running from a previous Axon session and
+      //    holds files in %APPDATA%\npm + the install dir, which makes NSIS
+      //    abort with "не удалось удалить старые файлы".
+      emitProgress({ stage: 'Closing running Axon and OmniRoute instances' })
       const selfPid = process.pid
-      const killCmd = `taskkill /F /FI "PID ne ${selfPid}" /IM "Axon.exe" /T`
-      const k1 = await runCmd(killCmd, 15000).catch(() => ({ success: false }))
-      setupLog(`install-app: taskkill Axon.exe (self pid ${selfPid}) success=${k1.success}; stdout=${k1.stdout?.slice(0,200)}`)
+      const k1 = await runCmd(`taskkill /F /FI "PID ne ${selfPid}" /IM "Axon.exe" /T`, 15000).catch(() => ({ success: false }))
+      const k2 = await runCmd('taskkill /F /IM "omniroute.exe" /T', 15000).catch(() => ({ success: false }))
+      // omniroute v3 is sometimes shipped purely as a node script: `node omniroute`.
+      // We can't blanket-kill node.exe (would nuke other dev tools), so target
+      // by command line via WMIC — best-effort, fails harmlessly if WMIC absent.
+      const k3 = await runCmd(
+        `wmic process where "name='node.exe' and commandline like '%%omniroute%%'" call terminate`,
+        15000
+      ).catch(() => ({ success: false }))
+      setupLog(`install-app: taskkill Axon.exe=${k1.success} omniroute.exe=${k2.success} node-omniroute=${k3.success}`)
       // Give Windows a beat to release the file handles after the processes die.
-      await new Promise(r => setTimeout(r, 800))
+      await new Promise(r => setTimeout(r, 1000))
 
       // 2) Run the OLD uninstaller silently. NSIS's `_?=<path>` flag stops the
       //    uninstaller from copying itself to %TEMP% before running — and CRITICALLY
@@ -474,13 +499,27 @@ async function runStep(step) {
         ? 'NSIS exited without replacing Axon.exe (the file on disk is the OLD version).'
         : 'NSIS exited without creating Axon.exe.'
 
+      // Read the tail of axon-setup.log and inline it into the error message so
+      // the user doesn't have to hunt for a file under %TEMP% (which under
+      // elevation sometimes ends up in a different path than they expect).
+      let setupLogTail = ''
+      try {
+        if (fs.existsSync(SETUP_LOG)) {
+          const text = fs.readFileSync(SETUP_LOG, 'utf8')
+          const lines = text.trim().split(/\r?\n/)
+          setupLogTail = lines.slice(-30).join('\n')
+        }
+      } catch { /* ignore */ }
+
       const detail = [
         reason,
         leftovers.length ? `Leftover files in ${APP_INSTALL_DIR}:\n  ${leftovers.join('\n  ')}` : '',
         lockers.length   ? `Processes holding install files:\n  ${lockers.join('\n  ')}` : '',
         r.stderr || '',
         r.stdout || '',
-        `Setup log: ${SETUP_LOG}`
+        setupLogTail
+          ? `Setup log tail (file: ${SETUP_LOG}):\n${setupLogTail}`
+          : `Setup log path: ${SETUP_LOG} (file not yet created)`
       ].filter(Boolean).join('\n\n')
 
       return { success: false, message: detail }

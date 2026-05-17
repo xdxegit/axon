@@ -146,14 +146,22 @@
     }
 
     .version-pill {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 10px; margin-bottom: 14px;
+      display: inline-flex;
+      align-self: flex-start;
+      align-items: center; gap: 5px;
+      padding: 3px 10px;
+      margin: 4px 0 14px;
       background: rgba(124,58,237,0.2);
       border: 1px solid rgba(124,58,237,0.4);
       border-radius: 20px;
       font-size: 11px; font-weight: 600;
       color: #a78bfa; letter-spacing: 0.4px;
+      width: fit-content;
     }
+
+    /* Welcome layout becomes a column flex so the version pill no longer collides
+       with the program name above it. */
+    #s-welcome.screen.active { display: flex; flex-direction: column; align-items: flex-start; }
 
     h1 {
       font-size: 30px; font-weight: 700; letter-spacing: -0.6px;
@@ -312,8 +320,8 @@
   <!-- ── Welcome ─────────────────────────────────────────────────────────── -->
   <div class="screen active" id="s-welcome">
     <div class="app-icon">&#x2B21;</div>
-    <div class="version-pill">&#x2B24; v1.0.3</div>
     <h1>Axon</h1>
+    <div class="version-pill">&#x2B24; v1.1.1-beta</div>
     <p style="font-size:11px;color:rgba(255,255,255,0.22);letter-spacing:0.7px;margin:0 0 18px;font-style:italic;">crafted by xdxegit</p>
     <p class="desc">
       Desktop AI workspace powered by OmniRoute.<br>
