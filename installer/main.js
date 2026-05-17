@@ -251,24 +251,40 @@ async function runStep(step) {
     }
 
     case 'check-omniroute': {
+      // 1) Verify the binary is on PATH at all.
       const r = await runCmd('where omniroute')
-      return { success: r.success, message: r.success ? 'OmniRoute CLI found' : 'OmniRoute CLI not found' }
+      if (!r.success) return { success: false, message: 'OmniRoute CLI not found' }
+      // 2) Verify the version. 3.7.9 has a broken Settings button, so anything
+      //    not matching the pinned 3.7.7 falls through to the install step.
+      const v = await runCmd('omniroute --version', 15000)
+      const m = /(\d+\.\d+\.\d+)/.exec(`${v.stdout || ''}${v.stderr || ''}`)
+      const version = m ? m[1] : null
+      if (version === '3.7.7') {
+        return { success: true, message: 'OmniRoute CLI 3.7.7 found' }
+      }
+      return {
+        success: false,
+        message: version
+          ? `OmniRoute ${version} найден — обновляю до 3.7.7…`
+          : 'OmniRoute CLI: версия не определена — переустанавливаю на 3.7.7…'
+      }
     }
 
     case 'install-omniroute': {
       // Make sure PATH is fresh in case node/npm was just installed in the previous step.
       await refreshPath()
 
-      emitProgress({ stage: 'Installing OmniRoute CLI via npm', detail: 'Resolving peer dependencies…' })
+      emitProgress({ stage: 'Installing OmniRoute CLI 3.7.7 via npm', detail: 'Resolving peer dependencies…' })
+      // Pinned to 3.7.7 — 3.7.9 ships with a broken "Settings" launch button.
       // omniroute has a React peer-dep conflict (react@19 vs sub-deps wanting ^16-18).
       // --legacy-peer-deps lets npm proceed instead of failing on ERESOLVE.
-      const r = await runCmd('npm install -g omniroute --legacy-peer-deps --no-fund --no-audit', 300000)
+      const r = await runCmd('npm install -g omniroute@3.7.7 --legacy-peer-deps --no-fund --no-audit', 300000)
 
       await refreshPath()
 
       const present = (await runCmd('where omniroute')).success
       if (present) {
-        return { success: true, message: 'OmniRoute CLI installed' }
+        return { success: true, message: 'OmniRoute CLI 3.7.7 installed' }
       }
 
       const detail = (r.stderr || r.stdout || '').slice(0, 500) || 'unknown error'

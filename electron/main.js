@@ -9,6 +9,11 @@ const isDev = !app.isPackaged;
 const execFileAsync = promisify(execFile);
 let omniRouteProcess = null;
 
+// Pinned OmniRoute version: 3.7.9 ships with a broken "Settings" launch button.
+// At startup we read the installed version and silently downgrade if needed so
+// non-technical users don't have to touch npm.
+const REQUIRED_OMNIROUTE_VERSION = "3.7.7";
+
 // Persistent log file at %APPDATA%/Axon/axon-main.log so we can debug white-screen /
 // crash issues post-install without running from a console.
 function appendLog(message) {
@@ -88,8 +93,26 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  await startLocalOmniRoute();
+  // Create window first so the user sees the UI immediately. The OmniRoute
+  // version check + downgrade can take 30–60s on slow npm registries; running
+  // it in the background avoids a blank-screen startup.
   createWindow();
+
+  // Defer the version check until the renderer has subscribed to app:toast,
+  // otherwise the first "Обновляю OmniRoute…" toast would be sent before
+  // anyone is listening and we'd silently lose it.
+  const runBackgroundBootstrap = async () => {
+    await ensureOmniRouteVersion();
+    await startLocalOmniRoute();
+  };
+  if (mainWindow) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      // 600ms buffer: covers React mount + useEffect registration of app:toast.
+      setTimeout(runBackgroundBootstrap, 600);
+    });
+  } else {
+    runBackgroundBootstrap();
+  }
 });
 
 app.on("window-all-closed", () => {
@@ -99,6 +122,88 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
+
+// Push a toast to the renderer UI. Used for background events the user should
+// see (e.g. "Обновляю OmniRoute…") without polling state from the renderer side.
+function emitAppToast(type, text) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try { mainWindow.webContents.send("app:toast", { type, text }); }
+  catch { /* renderer not ready, drop silently */ }
+}
+
+// Read the installed OmniRoute CLI version. Returns a semver string ("3.7.9")
+// or null if not installed / not parseable. We run via shell because `omniroute`
+// on Windows is a .cmd shim and execFile on a .cmd needs special handling.
+async function getOmniRouteVersion() {
+  try {
+    const shell = process.platform === "win32" ? "cmd.exe" : "sh";
+    const args  = process.platform === "win32"
+      ? ["/d", "/s", "/c", "omniroute --version"]
+      : ["-lc", "omniroute --version"];
+    const { stdout } = await execFileAsync(shell, args, {
+      windowsHide: true,
+      timeout: 10000,
+      maxBuffer: 1024 * 256
+    });
+    const m = /(\d+\.\d+\.\d+)/.exec(stdout || "");
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+// If a non-pinned OmniRoute is installed, replace it with REQUIRED_OMNIROUTE_VERSION.
+// Best-effort: no-ops cleanly when omniroute isn't installed at all (the bootstrap
+// modal will offer to install it). Emits toasts so the user sees what's happening.
+async function ensureOmniRouteVersion() {
+  await refreshPathFromRegistry();
+  const current = await getOmniRouteVersion();
+  if (!current) {
+    // Not installed → leave for the bootstrap modal / setup wizard to handle.
+    return { ok: false, reason: "not-installed" };
+  }
+  if (current === REQUIRED_OMNIROUTE_VERSION) {
+    return { ok: true, changed: false, version: current };
+  }
+
+  appendLog(`OmniRoute version mismatch: installed=${current}, required=${REQUIRED_OMNIROUTE_VERSION}`);
+  emitAppToast("info", `Обновляю OmniRoute ${current} → ${REQUIRED_OMNIROUTE_VERSION}…`);
+
+  // npm can't overwrite files held by a running CLI on Windows. Stop the one we
+  // started ourselves and best-effort kill anything else still holding the bin.
+  if (omniRouteProcess) {
+    try { omniRouteProcess.kill(); } catch { /* ignore */ }
+    omniRouteProcess = null;
+  }
+  if (process.platform === "win32") {
+    // omniroute v3 ships an .exe wrapper alongside the .cmd shim — kill that.
+    await execFileAsync("taskkill.exe", ["/F", "/IM", "omniroute.exe", "/T"], { windowsHide: true })
+      .catch(() => {});
+  }
+  // Brief pause to let Windows release the file handles.
+  await new Promise((r) => setTimeout(r, 600));
+
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  const result = await runShellCommand(npmCommand, [
+    "install", "-g", `omniroute@${REQUIRED_OMNIROUTE_VERSION}`,
+    "--legacy-peer-deps", "--no-fund", "--no-audit"
+  ]);
+
+  await refreshPathFromRegistry();
+  const after = await getOmniRouteVersion();
+  if (after === REQUIRED_OMNIROUTE_VERSION) {
+    emitAppToast("success", `OmniRoute обновлён до ${REQUIRED_OMNIROUTE_VERSION}`);
+    appendLog(`OmniRoute updated to ${after}`);
+    return { ok: true, changed: true, before: current, after };
+  }
+  const hint = result.output ? result.output.slice(0, 300) : "";
+  emitAppToast(
+    "error",
+    `Не удалось обновить OmniRoute (сейчас ${after || "?"}). Запустите вручную: npm install -g omniroute@${REQUIRED_OMNIROUTE_VERSION}`
+  );
+  appendLog(`OmniRoute update failed. now=${after} npm-output=${hint}`);
+  return { ok: false, reason: "install-failed", before: current, after };
+}
 
 async function isLocalOmniRouteReady() {
   const controller = new AbortController();
@@ -284,12 +389,13 @@ ipcMain.handle("bootstrap:install-omniroute", async () => {
     throw new Error("npm не найден. Сначала установите Node.js LTS.");
   }
 
+  // Pinned to 3.7.7 — 3.7.9 ships with a broken "Settings" launch button.
   // omniroute has a React peer-dep conflict (react@19 vs sub-deps wanting ^16-18).
   // --legacy-peer-deps lets npm proceed instead of failing on ERESOLVE.
   const result = await runShellCommand(npmCommand, [
     "install",
     "-g",
-    "omniroute",
+    "omniroute@3.7.7",
     "--legacy-peer-deps",
     "--no-fund",
     "--no-audit"

@@ -8,7 +8,16 @@ contextBridge.exposeInMainWorld("omni", {
   installOmniRoute: () => ipcRenderer.invoke("bootstrap:install-omniroute"),
   startOmniRoute: () => ipcRenderer.invoke("bootstrap:start-omniroute"),
   claudeCheck: () => ipcRenderer.invoke("claude:check"),
-  claudeLaunch: (payload) => ipcRenderer.invoke("claude:launch", payload)
+  claudeLaunch: (payload) => ipcRenderer.invoke("claude:launch", payload),
+
+  // Main-process initiated toast — used for background events (OmniRoute auto-
+  // downgrade, etc.) where the renderer wouldn't otherwise know to surface them.
+  // Returns an unsubscribe function.
+  onAppToast: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on("app:toast", handler);
+    return () => ipcRenderer.removeListener("app:toast", handler);
+  }
 });
 
 // Custom window-control bridge — paired with the frameless BrowserWindow and the

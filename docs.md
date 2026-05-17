@@ -47,7 +47,7 @@ If local setup is missing, the app shows a first-run setup modal:
 
 - Checks Node.js, npm, OmniRoute CLI, and the local OmniRoute API.
 - Installs Node.js LTS through `winget` when npm is unavailable.
-- Installs OmniRoute through `npm install -g omniroute`.
+- Installs OmniRoute through `npm install -g omniroute@3.7.7` (pinned — 3.7.9 has a broken Settings button).
 - Starts the local `omniroute` command and rechecks the API.
 
 The separate Axon Setup wizard performs a fuller bootstrap:
