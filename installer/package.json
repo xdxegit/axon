@@ -55,6 +55,7 @@
     },
     "linux": {
       "category": "Utility",
+      "icon": "build/icons",
       "maintainer": "xdxegit <noreply@axon.studio>",
       "target": [
         { "target": "AppImage", "arch": ["x64"] }
