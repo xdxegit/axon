@@ -1,8 +1,13 @@
 name: Release
 
 # Builds native installers for Windows, macOS (x64 + arm64) and Linux
-# (AppImage / deb / rpm / tar.gz) and attaches them to a GitHub Release.
-# Trigger by pushing a tag like `v1.2.0`, or run manually.
+# (AppImage / deb / rpm / tar.gz) plus the "Axon Glow" wizard, then publishes
+# everything to a single GitHub Release.
+#
+# Build and publish are split on purpose: each OS only *builds* and uploads its
+# files as workflow artifacts. A final single job downloads them all and creates
+# the Release once — otherwise the three matrix jobs race each other deleting and
+# re-uploading the same release assets (HTTP 404s on concurrent delete/update).
 
 on:
   push:
@@ -13,8 +18,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: ${{ matrix.os }}
+  build:
+    name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -46,7 +51,6 @@ jobs:
         run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # The "Axon Glow" wizard wraps the native installers built above (it bundles
       # this OS's payload from release/ via extraResources). Build it per OS too.
@@ -60,35 +64,43 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: axon-${{ matrix.os }}
-          path: |
-            release/**/*.exe
-            release/**/*.dmg
-            release/**/*.zip
-            release/**/*.AppImage
-            release/**/*.deb
-            release/**/*.rpm
-            release/**/*.tar.gz
-            release-installer-*/**/*.exe
-            release-installer-*/**/*.dmg
-            release-installer-*/**/*.zip
-            release-installer-*/**/*.AppImage
+          retention-days: 7
           if-no-files-found: ignore
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.tar.gz
+            release-installer-*/*.exe
+            release-installer-*/*.dmg
+            release-installer-*/*.zip
+            release-installer-*/*.AppImage
+
+  publish:
+    name: publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
 
       - name: Attach to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           # Beta tags (e.g. v2.0.0-beta) are published as pre-releases.
           prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: false
           files: |
-            release/**/*.exe
-            release/**/*.dmg
-            release/**/*.zip
-            release/**/*.AppImage
-            release/**/*.deb
-            release/**/*.rpm
-            release/**/*.tar.gz
-            release-installer-*/**/*.exe
-            release-installer-*/**/*.dmg
-            release-installer-*/**/*.zip
-            release-installer-*/**/*.AppImage
+            dist/**/*.exe
+            dist/**/*.dmg
+            dist/**/*.zip
+            dist/**/*.AppImage
+            dist/**/*.deb
+            dist/**/*.rpm
+            dist/**/*.tar.gz
