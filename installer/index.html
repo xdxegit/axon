@@ -3,312 +3,269 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline';" />
-  <title>Axon — Setup</title>
+        content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>Axon Glow — Setup</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-    body {
-      width: 720px; height: 520px;
+    :root {
+      --glow-a: #7c3aed;   /* violet  */
+      --glow-b: #22d3ee;   /* cyan    */
+      --glow-c: #34d399;   /* emerald */
+      --glow-d: #fbbf24;   /* amber   */
+      --glow-e: #fb7185;   /* rose    */
+      --ink: #f4f6ff;
+      --dim: rgba(244, 246, 255, 0.62);
+      --faint: rgba(244, 246, 255, 0.32);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
       overflow: hidden;
-      background: #06060f;
-      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
-      color: #fff;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-app-region: drag;
+      background: transparent;
+      font-family: -apple-system, 'Segoe UI', Inter, system-ui, sans-serif;
+      color: var(--ink);
+      user-select: none; -webkit-user-select: none;
     }
 
-    /* ── Animated blobs ──────────────────────────────────────────────────── */
-    .blobs { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    /* Whole window is draggable; interactive bits opt out. */
+    body { -webkit-app-region: drag; }
+    button, .no-drag { -webkit-app-region: no-drag; }
 
-    .blob {
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(90px);
-      opacity: 0.55;
-      will-change: transform;
-    }
-
-    .blob-1 {
-      width: 480px; height: 480px;
-      background: radial-gradient(circle at 40% 40%, #7c3aed 0%, #4338ca 50%, transparent 75%);
-      top: -160px; left: -120px;
-      animation: blobFloat1 14s ease-in-out infinite;
-    }
-    .blob-2 {
-      width: 400px; height: 400px;
-      background: radial-gradient(circle at 60% 60%, #0284c7 0%, #0891b2 50%, transparent 75%);
-      bottom: -140px; right: -80px;
-      animation: blobFloat2 18s ease-in-out infinite;
-    }
-    .blob-3 {
-      width: 260px; height: 260px;
-      background: radial-gradient(circle at 50% 50%, #db2777 0%, #9333ea 60%, transparent 80%);
-      top: 55%; left: 48%;
-      opacity: 0.3;
-      animation: blobFloat3 22s ease-in-out infinite;
-    }
-    .blob-4 {
-      width: 200px; height: 200px;
-      background: radial-gradient(circle at 50% 50%, #0d9488 0%, #0e7490 60%, transparent 80%);
-      top: 10%; right: 15%;
-      opacity: 0.35;
-      animation: blobFloat4 16s ease-in-out infinite;
+    /* ── Backdrop ──────────────────────────────────────────────────────────── */
+    .stage {
+      position: absolute; inset: 0;
+      border-radius: 18px;
+      overflow: hidden;
+      background:
+        radial-gradient(130% 100% at 50% -20%, #161427 0%, #0c0b16 55%, #070610 100%);
+      border: 1px solid rgba(255, 255, 255, 0.07);
     }
 
-    @keyframes blobFloat1 {
-      0%, 100% { transform: translate(0,0) scale(1); }
-      33%       { transform: translate(70px,50px) scale(1.08); }
-      66%       { transform: translate(-30px,70px) scale(0.94); }
+    /* Drifting colour fields. */
+    .field {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); opacity: 0.5; pointer-events: none;
+      mix-blend-mode: screen; will-change: transform;
     }
-    @keyframes blobFloat2 {
-      0%, 100% { transform: translate(0,0) scale(1); }
-      40%       { transform: translate(-60px,-50px) scale(1.06); }
-      75%       { transform: translate(40px,-65px) scale(0.92); }
-    }
-    @keyframes blobFloat3 {
-      0%, 100% { transform: translate(0,0) scale(1) rotate(0deg); }
-      50%       { transform: translate(-40px,-30px) scale(1.2) rotate(120deg); }
-    }
-    @keyframes blobFloat4 {
-      0%, 100% { transform: translate(0,0) scale(1); }
-      50%       { transform: translate(-50px,40px) scale(1.15); }
+    .field-1 { width: 460px; height: 460px; top: -180px; left: -140px;
+      background: radial-gradient(circle at 40% 40%, var(--glow-a), transparent 70%);
+      animation: drift1 18s ease-in-out infinite; }
+    .field-2 { width: 420px; height: 420px; bottom: -200px; right: -120px;
+      background: radial-gradient(circle at 50% 50%, var(--glow-b), transparent 70%);
+      animation: drift2 22s ease-in-out infinite; }
+    .field-3 { width: 360px; height: 360px; bottom: -160px; left: 30%;
+      background: radial-gradient(circle at 50% 50%, var(--glow-c), transparent 72%);
+      animation: drift3 26s ease-in-out infinite; }
+
+    @keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(60px,40px) scale(1.12); } }
+    @keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-50px,-30px) scale(1.08); } }
+    @keyframes drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(30px,-40px) scale(1.15); } }
+
+    /* Fine grain so the gradients don't band. */
+    .grain {
+      position: absolute; inset: 0; opacity: 0.05; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     }
 
-    /* ── Subtle noise overlay ────────────────────────────────────────────── */
-    .noise {
-      position: absolute; inset: 0; pointer-events: none; opacity: 0.035;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      background-size: 160px;
-    }
-
-    /* ── Titlebar ────────────────────────────────────────────────────────── */
+    /* ── Title bar ─────────────────────────────────────────────────────────── */
     .titlebar {
-      position: absolute; top: 0; left: 0; right: 0; height: 44px;
+      position: absolute; top: 0; left: 0; right: 0; height: 46px;
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 18px; z-index: 100;
-      -webkit-app-region: drag;
+      padding: 0 12px 0 18px; z-index: 10;
     }
-    .titlebar-logo {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.35);
-      letter-spacing: 0.5px;
+    .titlebar-brand { display: flex; align-items: center; gap: 9px; font-size: 12.5px; font-weight: 600; color: var(--dim); }
+    .brand-spark {
+      width: 13px; height: 13px; border-radius: 50%;
+      background: conic-gradient(from 0deg, var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-d), var(--glow-e), var(--glow-a));
+      animation: spin 6s linear infinite, hue 9s linear infinite;
+      box-shadow: 0 0 10px rgba(124, 58, 237, 0.6);
     }
-    .titlebar-logo-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: linear-gradient(135deg, #7c3aed, #4338ca);
-    }
-    .titlebar-btns { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+    .titlebar-btns { display: flex; gap: 4px; }
     .titlebar-btn {
-      width: 26px; height: 26px; border-radius: 50%; border: none;
-      cursor: pointer; display: flex; align-items: center; justify-content: center;
-      background: rgba(255,255,255,0.06);
-      color: rgba(255,255,255,0.4); font-size: 12px;
-      transition: background 0.18s, color 0.18s;
+      width: 30px; height: 30px; border: 0; border-radius: 8px;
+      background: transparent; color: var(--faint); font-size: 14px; cursor: pointer;
+      display: grid; place-items: center; transition: background 0.15s, color 0.15s;
     }
-    .titlebar-btn:hover { background: rgba(255,255,255,0.13); color: #fff; }
-    .titlebar-btn.close:hover { background: rgba(239,68,68,0.65); color: #fff; }
+    .titlebar-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+    .titlebar-btn.close:hover { background: rgba(239, 68, 68, 0.85); color: #fff; }
+    /* macOS keeps native traffic lights — hide our cluster, shift brand right. */
+    body.mac .titlebar-btns { display: none; }
+    body.mac .titlebar { padding-left: 84px; }
 
-    /* ── Glass card ──────────────────────────────────────────────────────── */
+    /* ── Card / screens ────────────────────────────────────────────────────── */
     .card {
-      position: absolute; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 560px;
-      padding: 44px 50px;
-      background: rgba(255,255,255,0.038);
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 26px;
-      backdrop-filter: blur(48px) saturate(170%);
-      -webkit-backdrop-filter: blur(48px) saturate(170%);
-      box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.08),
-        0 30px 90px rgba(0,0,0,0.55),
-        0 0 0 1px rgba(255,255,255,0.03);
-    }
-
-    /* ── Screens ─────────────────────────────────────────────────────────── */
-    .screen { display: none; }
-    .screen.active { display: block; animation: screenIn 0.38s cubic-bezier(0.22,1,0.36,1); }
-
-    @keyframes screenIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ── Welcome ─────────────────────────────────────────────────────────── */
-    .app-icon {
-      width: 60px; height: 60px; border-radius: 16px; margin-bottom: 22px;
-      background: linear-gradient(135deg, #7c3aed 0%, #4338ca 50%, #0284c7 100%);
+      position: absolute; inset: 46px 0 0;
       display: flex; align-items: center; justify-content: center;
-      font-size: 30px;
-      box-shadow: 0 8px 32px rgba(124,58,237,0.45);
+      padding: 8px 40px 44px;
     }
+    .screen {
+      width: 100%; max-width: 460px;
+      display: none; flex-direction: column; align-items: center; text-align: center;
+    }
+    .screen.active { display: flex; animation: fadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.6px; margin-bottom: 6px; }
+    .desc { font-size: 13.5px; line-height: 1.6; color: var(--dim); margin-bottom: 26px; }
+
+    /* ── The shimmering light (the centrepiece) ────────────────────────────── */
+    .orb {
+      position: relative; width: 104px; height: 104px; margin-bottom: 22px;
+      display: grid; place-items: center;
+    }
+    /* rotating iridescent ring */
+    .orb::before {
+      content: ""; position: absolute; inset: -6px; border-radius: 50%;
+      background: conic-gradient(from 0deg,
+        var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-d), var(--glow-e), var(--glow-a));
+      animation: spin 7s linear infinite;
+      filter: blur(2px);
+    }
+    /* soft hue-shifting halo */
+    .orb::after {
+      content: ""; position: absolute; inset: -28px; border-radius: 50%;
+      background: radial-gradient(circle, var(--glow-a), transparent 68%);
+      filter: blur(26px); opacity: 0.85;
+      animation: hue 8s linear infinite, breathe 4.5s ease-in-out infinite;
+    }
+    .orb-core {
+      position: relative; z-index: 2;
+      width: 92px; height: 92px; border-radius: 50%;
+      background: radial-gradient(circle at 38% 32%, #2a2740, #100e1d 78%);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      display: grid; place-items: center;
+      box-shadow: inset 0 1px 12px rgba(255, 255, 255, 0.12);
+    }
+    /* the glyph + an inner travelling sheen */
+    .orb-glyph {
+      font-size: 38px; line-height: 1;
+      background: linear-gradient(120deg, #fff 10%, var(--glow-b) 40%, var(--glow-a) 60%, #fff 90%);
+      background-size: 220% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent; color: transparent;
+      animation: sheen 3.4s ease-in-out infinite;
+    }
+
+    @keyframes spin   { to { transform: rotate(360deg); } }
+    @keyframes hue    { to { filter: hue-rotate(360deg); } }
+    @keyframes breathe{ 0%,100% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.12); opacity: 0.95; } }
+    @keyframes sheen  { 0%,100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
 
     .version-pill {
-      display: inline-flex;
-      align-self: flex-start;
-      align-items: center; gap: 5px;
-      padding: 3px 10px;
-      margin: 4px 0 14px;
-      background: rgba(124,58,237,0.2);
-      border: 1px solid rgba(124,58,237,0.4);
-      border-radius: 20px;
-      font-size: 11px; font-weight: 600;
-      color: #a78bfa; letter-spacing: 0.4px;
-      width: fit-content;
-    }
-
-    /* Welcome layout becomes a column flex so the version pill no longer collides
-       with the program name above it. */
-    #s-welcome.screen.active { display: flex; flex-direction: column; align-items: flex-start; }
-
-    h1 {
-      font-size: 30px; font-weight: 700; letter-spacing: -0.6px;
-      color: #fff; margin-bottom: 10px;
-    }
-
-    .desc {
-      font-size: 14px; color: rgba(255,255,255,0.46);
-      line-height: 1.6; margin-bottom: 36px;
-    }
-
-    .btn-row { display: flex; gap: 10px; align-items: center; }
-
-    .btn {
       display: inline-flex; align-items: center; gap: 7px;
-      padding: 13px 28px; border-radius: 12px; border: none;
-      font-size: 14px; font-weight: 600; cursor: pointer;
-      transition: all 0.2s; -webkit-app-region: no-drag;
+      padding: 5px 13px; border-radius: 999px; margin-bottom: 8px;
+      background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 11.5px; color: var(--dim);
     }
+    .credit { font-size: 11px; color: var(--faint); letter-spacing: 0.6px; font-style: italic; margin-bottom: 20px; }
 
+    /* ── Buttons ───────────────────────────────────────────────────────────── */
+    .btn-row { display: flex; gap: 12px; align-items: center; }
+    .btn {
+      min-height: 44px; padding: 0 24px; border: 0; border-radius: 13px;
+      font-size: 14px; font-weight: 600; cursor: pointer; color: var(--ink);
+      transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+    }
+    .btn:hover { transform: translateY(-1px); }
     .btn-primary {
-      background: linear-gradient(135deg, #7c3aed, #4338ca);
-      color: #fff;
-      box-shadow: 0 4px 20px rgba(124,58,237,0.5);
+      position: relative; overflow: hidden; color: #0c0b16;
+      background: linear-gradient(110deg, var(--glow-b), var(--glow-a) 55%, var(--glow-e));
+      background-size: 220% 100%;
+      animation: sheen 5s ease-in-out infinite;
+      box-shadow: 0 10px 30px rgba(124, 58, 237, 0.4);
     }
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 28px rgba(124,58,237,0.65);
-    }
-    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:hover { box-shadow: 0 14px 38px rgba(124, 58, 237, 0.55); }
+    .btn-ghost { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); color: var(--dim); }
+    .btn-ghost:hover { background: rgba(255, 255, 255, 0.1); color: var(--ink); }
 
-    .btn-ghost {
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.1);
-      color: rgba(255,255,255,0.55);
-    }
-    .btn-ghost:hover { background: rgba(255,255,255,0.11); color: #fff; }
-
-    /* ── Installing ──────────────────────────────────────────────────────── */
-    .installing-title {
-      font-size: 22px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.4px;
-    }
-    .installing-sub {
-      font-size: 13px; color: rgba(255,255,255,0.38); margin-bottom: 22px;
-    }
+    /* ── Installing ────────────────────────────────────────────────────────── */
+    .installing-title { font-size: 19px; font-weight: 650; margin-bottom: 3px; }
+    .installing-sub { font-size: 12.5px; color: var(--dim); margin-bottom: 20px; }
 
     .progress-track {
-      height: 3px; background: rgba(255,255,255,0.07);
-      border-radius: 3px; overflow: hidden; margin-bottom: 22px;
+      width: 100%; height: 6px; border-radius: 999px; overflow: hidden;
+      background: rgba(255, 255, 255, 0.07); margin-bottom: 22px;
     }
     .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #7c3aed, #4338ca, #0284c7);
-      border-radius: 3px;
-      transition: width 0.55s cubic-bezier(0.4,0,0.2,1);
-      box-shadow: 0 0 10px rgba(124,58,237,0.6);
-      width: 0%;
+      height: 100%; width: 0%; border-radius: 999px;
+      background: linear-gradient(90deg, var(--glow-b), var(--glow-a) 50%, var(--glow-e));
+      background-size: 220% 100%;
+      animation: sheen 2.4s linear infinite;
+      transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+      box-shadow: 0 0 14px rgba(124, 58, 237, 0.5);
     }
 
-    .steps { list-style: none; margin-bottom: 20px; }
-
-    .step-row {
-      display: flex; align-items: center; gap: 11px;
-      padding: 9px 0;
-      border-bottom: 1px solid rgba(255,255,255,0.045);
-    }
-    .step-row:last-child { border-bottom: none; }
-
+    .steps { list-style: none; width: 100%; display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
+    .step-row { display: flex; align-items: center; gap: 12px; text-align: left; }
     .step-dot {
-      width: 26px; height: 26px; flex-shrink: 0; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700; transition: all 0.3s ease;
+      width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.12); color: var(--faint);
+      transition: all 0.3s;
     }
-    .step-dot.idle    { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.25); }
-    .step-dot.running {
-      background: rgba(124,58,237,0.25);
-      border: 1.5px solid rgba(124,58,237,0.6);
-      color: #a78bfa;
-      animation: dotPulse 1.1s ease-in-out infinite;
-    }
-    .step-dot.ok     { background: rgba(16,185,129,0.2);  border: 1.5px solid rgba(16,185,129,0.45); color: #34d399; }
-    .step-dot.fail   { background: rgba(239,68,68,0.2);   border: 1.5px solid rgba(239,68,68,0.45);  color: #f87171; }
-    .step-dot.skip   { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);  color: rgba(255,255,255,0.2); }
-
-    @keyframes dotPulse {
-      0%, 100% { box-shadow: 0 0 0 0   rgba(124,58,237,0.45); }
-      50%       { box-shadow: 0 0 0 5px rgba(124,58,237,0); }
-    }
+    .step-dot.running { color: var(--glow-a); border-color: rgba(124, 58, 237, 0.6); animation: pulse 1.4s ease-in-out infinite; }
+    .step-dot.ok   { color: var(--glow-c); border-color: rgba(52, 211, 153, 0.5); background: rgba(52, 211, 153, 0.12); }
+    .step-dot.fail { color: var(--glow-e); border-color: rgba(251, 113, 133, 0.5); background: rgba(251, 113, 133, 0.12); }
+    .step-dot.skip { color: var(--faint); }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.45); } 50% { box-shadow: 0 0 0 5px rgba(124,58,237,0); } }
 
     .step-info { flex: 1; min-width: 0; }
-    .step-label { font-size: 13.5px; font-weight: 500; color: rgba(255,255,255,0.82); }
-    .step-note  {
-      font-size: 11.5px; color: rgba(255,255,255,0.3);
-      margin-top: 1px; transition: color 0.3s;
+    .step-label { font-size: 13.5px; font-weight: 500; color: rgba(255, 255, 255, 0.84); }
+    .step-note {
+      font-size: 11.5px; color: var(--faint); margin-top: 1px; transition: color 0.3s;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .step-note.running { color: #a78bfa; }
-    .step-note.fail    { color: #f87171; }
-    .step-note.skip    { color: rgba(255,255,255,0.18); }
+    .step-note.running { color: var(--glow-a); }
+    .step-note.fail { color: var(--glow-e); }
+    .step-note.skip { color: rgba(255, 255, 255, 0.18); }
 
     .log-area {
       font-family: 'Consolas', 'Cascadia Code', monospace;
-      font-size: 10.5px; color: rgba(255,255,255,0.22);
-      min-height: 14px; overflow: hidden;
-      white-space: nowrap; text-overflow: ellipsis;
+      font-size: 10.5px; color: var(--faint);
+      min-height: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; width: 100%;
     }
 
-    /* ── Done ────────────────────────────────────────────────────────────── */
-    .done-ring {
-      width: 66px; height: 66px; border-radius: 50%;
-      background: rgba(16,185,129,0.12);
-      border: 2px solid rgba(16,185,129,0.38);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 28px; margin-bottom: 22px;
-      animation: popIn 0.5s cubic-bezier(0.34,1.56,0.64,1);
+    /* ── Done / error rings ────────────────────────────────────────────────── */
+    .ring {
+      width: 70px; height: 70px; border-radius: 50%; margin-bottom: 22px;
+      display: grid; place-items: center; font-size: 30px;
+      animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    @keyframes popIn {
-      from { transform: scale(0.4); opacity: 0; }
-      to   { transform: scale(1);   opacity: 1; }
+    .ring.ok   { background: rgba(52, 211, 153, 0.12); border: 2px solid rgba(52, 211, 153, 0.42); color: var(--glow-c); }
+    .ring.fail { background: rgba(239, 68, 68, 0.12);  border: 2px solid rgba(239, 68, 68, 0.42);  color: var(--glow-e); }
+    @keyframes popIn { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    .err-msg {
+      max-height: 230px; overflow: auto; width: 100%;
+      padding: 12px 14px; margin-bottom: 22px; border-radius: 11px;
+      background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.06);
+      font-family: 'Consolas', 'Cascadia Code', monospace; font-size: 11.5px; line-height: 1.5;
+      color: var(--dim); white-space: pre-wrap; word-break: break-word; text-align: left;
     }
 
-    /* ── Error ───────────────────────────────────────────────────────────── */
-    .err-ring {
-      width: 66px; height: 66px; border-radius: 50%;
-      background: rgba(239,68,68,0.12);
-      border: 2px solid rgba(239,68,68,0.38);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 28px; margin-bottom: 22px;
-      animation: popIn 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    .footer {
+      position: absolute; bottom: 12px; left: 0; right: 0; text-align: center;
+      font-size: 10px; color: rgba(255, 255, 255, 0.16); letter-spacing: 0.6px;
+      pointer-events: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
     }
   </style>
 </head>
 <body>
 
-<div class="blobs">
-  <div class="blob blob-1"></div>
-  <div class="blob blob-2"></div>
-  <div class="blob blob-3"></div>
-  <div class="blob blob-4"></div>
+<div class="stage">
+  <div class="field field-1"></div>
+  <div class="field field-2"></div>
+  <div class="field field-3"></div>
+  <div class="grain"></div>
 </div>
-<div class="noise"></div>
 
 <div class="titlebar">
-  <div class="titlebar-logo">
-    <div class="titlebar-logo-dot"></div>
-    Axon — Setup
-  </div>
+  <div class="titlebar-brand"><span class="brand-spark"></span> Axon Glow</div>
   <div class="titlebar-btns">
     <button class="titlebar-btn"       onclick="window.api.minimize()" title="Minimise">&#x2013;</button>
     <button class="titlebar-btn close" onclick="window.api.close()"    title="Cancel">&#x2715;</button>
@@ -317,15 +274,15 @@
 
 <div class="card">
 
-  <!-- ── Welcome ─────────────────────────────────────────────────────────── -->
+  <!-- Welcome -->
   <div class="screen active" id="s-welcome">
-    <div class="app-icon">&#x2B21;</div>
-    <h1>Axon</h1>
-    <div class="version-pill">&#x2B24; v1.1.1-beta</div>
-    <p style="font-size:11px;color:rgba(255,255,255,0.22);letter-spacing:0.7px;margin:0 0 18px;font-style:italic;">crafted by xdxegit</p>
+    <div class="orb"><div class="orb-core"><span class="orb-glyph">&#x2B21;</span></div></div>
+    <h1>Axon Glow</h1>
+    <div class="version-pill"><span class="brand-spark" style="width:9px;height:9px"></span> <span id="ver">v2.0.0-beta</span></div>
+    <p class="credit">crafted by xdxegit</p>
     <p class="desc">
-      Desktop AI workspace powered by OmniRoute.<br>
-      This wizard will automatically set up all required components.
+      Installs <strong>Axon</strong> — your desktop AI workspace powered by OmniRoute —
+      and every component it needs, in one shimmering step.
     </p>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="startInstall()">Install &nbsp;&#x2192;</button>
@@ -333,243 +290,198 @@
     </div>
   </div>
 
-  <!-- ── Installing ──────────────────────────────────────────────────────── -->
+  <!-- Installing -->
   <div class="screen" id="s-installing">
-    <p class="installing-title">Installing&hellip;</p>
-    <p class="installing-sub">Please wait while components are set up.</p>
-
-    <div class="progress-track">
-      <div class="progress-fill" id="progress"></div>
-    </div>
-
+    <p class="installing-title">Setting things up&hellip;</p>
+    <p class="installing-sub">Sit back — the glow does the work.</p>
+    <div class="progress-track"><div class="progress-fill" id="progress"></div></div>
     <ul class="steps" id="steps-list"></ul>
-
     <div class="log-area" id="log"></div>
   </div>
 
-  <!-- ── Done ────────────────────────────────────────────────────────────── -->
+  <!-- Done -->
   <div class="screen" id="s-done">
-    <div class="done-ring">&#x2713;</div>
+    <div class="ring ok">&#x2713;</div>
     <h1 style="margin-bottom:8px;">All set!</h1>
-    <p class="desc" style="margin-bottom:32px;">
-      Axon installed successfully.<br>
-      You can find it on your Desktop and Start Menu.
-    </p>
+    <p class="desc" id="done-desc" style="margin-bottom:30px;">Axon installed successfully.</p>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="launch()">Launch now &nbsp;&#x2192;</button>
       <button class="btn btn-ghost"   onclick="window.api.close()">Close</button>
     </div>
   </div>
 
-  <!-- ── Error ───────────────────────────────────────────────────────────── -->
+  <!-- Error -->
   <div class="screen" id="s-error">
-    <div class="err-ring">&#x26A0;</div>
-    <h1 style="margin-bottom:8px;color:#f87171;">Installation failed</h1>
-    <pre id="err-msg" style="
-      max-height: 240px;
-      overflow: auto;
-      padding: 12px 14px;
-      margin-bottom: 22px;
-      border-radius: 10px;
-      background: rgba(0,0,0,0.28);
-      border: 1px solid rgba(255,255,255,0.06);
-      font-family: 'Consolas', 'Cascadia Code', monospace;
-      font-size: 11.5px;
-      line-height: 1.5;
-      color: rgba(255,255,255,0.72);
-      white-space: pre-wrap;
-      word-break: break-word;
-      text-align: left;
-    "></pre>
+    <div class="ring fail">&#x26A0;</div>
+    <h1 style="margin-bottom:8px;color:#fb7185;">Installation failed</h1>
+    <pre class="err-msg" id="err-msg"></pre>
     <button class="btn btn-ghost" onclick="window.api.close()">Close</button>
   </div>
 
-  <div style="position:absolute;bottom:14px;left:0;right:0;text-align:center;font-size:10px;color:rgba(255,255,255,0.14);letter-spacing:0.6px;pointer-events:none;user-select:none;">
-    by xdxegit
-  </div>
 </div>
 
+<div class="footer">Axon Glow · by xdxegit</div>
+
 <script>
+// Platform comes from preload; defaults to win32 for the dev browser.
+const PLATFORM = (window.api && window.api.platform) || 'win32';
+const IS_WIN = PLATFORM === 'win32';
+const IS_MAC = PLATFORM === 'darwin';
+// Frameless on every OS (no native traffic lights), so we keep our own min/close
+// controls visible on macOS too — do not hide them.
+
+// Step catalogue. The Windows-only "winget" bootstrap is dropped on macOS/Linux,
+// where Node.js comes from the system package manager / is expected present.
 const ALL_STEPS = [
-  {
-    id: 'winget',    label: 'Windows Package Manager',
-    checkStep: 'check-winget',    installStep: 'install-winget',
-    checkNote: 'Checking winget…', installNote: 'Downloading from GitHub…'
-  },
-  {
-    id: 'node',      label: 'Node.js LTS',
-    checkStep: 'check-node',      installStep: 'install-node',
-    checkNote: 'Checking Node.js…', installNote: 'Installing via winget…'
-  },
-  {
-    id: 'omniroute', label: 'OmniRoute CLI',
+  { id: 'winget', label: 'Windows Package Manager', win: true,
+    checkStep: 'check-winget', installStep: 'install-winget',
+    checkNote: 'Checking winget…', installNote: 'Downloading from GitHub…' },
+  { id: 'node', label: 'Node.js LTS',
+    checkStep: 'check-node', installStep: 'install-node',
+    checkNote: 'Checking Node.js…', installNote: 'Installing Node.js…' },
+  { id: 'omniroute', label: 'OmniRoute CLI',
     checkStep: 'check-omniroute', installStep: 'install-omniroute',
-    checkNote: 'Checking omniroute…', installNote: 'Running npm install -g omniroute@3.7.7…'
-  },
-  {
-    id: 'claude',    label: 'Claude Code CLI',
-    checkStep: 'check-claude',    installStep: 'install-claude',
-    checkNote: 'Checking Claude Code CLI…', installNote: 'Installing @anthropic-ai/claude-code…'
-  },
-  {
-    id: 'app',       label: 'Axon',
+    checkNote: 'Checking omniroute…', installNote: 'Running npm install -g omniroute@3.7.7…' },
+  { id: 'claude', label: 'Claude Code CLI',
+    checkStep: 'check-claude', installStep: 'install-claude',
+    checkNote: 'Checking Claude Code CLI…', installNote: 'Installing @anthropic-ai/claude-code…' },
+  { id: 'app', label: 'Axon',
     checkStep: null, installStep: 'install-app',
-    installNote: 'Running installer — this may take a moment…'
-  }
-]
+    installNote: 'Installing Axon — this may take a moment…' }
+].filter(s => IS_WIN || !s.win);
 
 function show(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById('s-' + id).classList.add('active')
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('s-' + id).classList.add('active');
 }
 
 function buildList() {
-  const ul = document.getElementById('steps-list')
-  ul.innerHTML = ''
+  const ul = document.getElementById('steps-list');
+  ul.innerHTML = '';
   ALL_STEPS.forEach(s => {
-    const li = document.createElement('li')
-    li.className = 'step-row'
-    li.id = 'row-' + s.id
+    const li = document.createElement('li');
+    li.className = 'step-row';
+    li.id = 'row-' + s.id;
     li.innerHTML =
       `<div class="step-dot idle" id="dot-${s.id}">&#x25CF;</div>` +
       `<div class="step-info">` +
         `<div class="step-label">${s.label}</div>` +
         `<div class="step-note" id="note-${s.id}">${s.checkNote || s.installNote}</div>` +
-      `</div>`
-    ul.appendChild(li)
-  })
+      `</div>`;
+    ul.appendChild(li);
+  });
 }
 
 function setDot(id, state, note) {
-  const dot = document.getElementById('dot-' + id)
-  const nEl = document.getElementById('note-' + id)
-  dot.className = 'step-dot ' + state
+  const dot = document.getElementById('dot-' + id);
+  const nEl = document.getElementById('note-' + id);
+  if (!dot) return;
+  dot.className = 'step-dot ' + state;
   dot.innerHTML =
     state === 'ok'      ? '&#x2713;' :
     state === 'fail'    ? '&#x2715;' :
     state === 'running' ? '&#x25E6;' :
-    state === 'skip'    ? '&#x2013;' : '&#x25CF;'
+    state === 'skip'    ? '&#x2013;' : '&#x25CF;';
   if (note !== undefined) {
-    nEl.textContent = note
+    nEl.textContent = note;
     nEl.className = 'step-note' +
-      (state === 'fail' ? ' fail' : state === 'running' ? ' running' : state === 'skip' ? ' skip' : '')
+      (state === 'fail' ? ' fail' : state === 'running' ? ' running' : state === 'skip' ? ' skip' : '');
   }
 }
 
-function setProgress(pct) { document.getElementById('progress').style.width = pct + '%' }
-function setLog(msg)       { document.getElementById('log').textContent = '> ' + msg }
-function sleep(ms)         { return new Promise(r => setTimeout(r, ms)) }
+function setProgress(pct) { document.getElementById('progress').style.width = pct + '%'; }
+function setLog(msg)       { document.getElementById('log').textContent = '> ' + msg; }
+function sleep(ms)         { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Live status: stage + elapsed timer + optional detail ─────────────────────
-// While a long-running step runs, we render "[1:23] Installing Axon — Installed 42.3 MB"
-// in the bottom strip. The stage and detail come from main-process emitProgress events;
-// the elapsed clock is driven entirely client-side via setInterval.
-let liveTimer = null
-let liveStartedAt = 0
-let liveStage = ''
-let liveDetail = ''
-
+let liveTimer = null, liveStartedAt = 0, liveStage = '', liveDetail = '';
 function fmtElapsed(ms) {
-  const sec = Math.floor(ms / 1000)
-  const m = Math.floor(sec / 60)
-  const s = sec % 60
-  if (m > 0) return m + ':' + String(s).padStart(2, '0')
-  return s + 's'
+  const sec = Math.floor(ms / 1000), m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? m + ':' + String(s).padStart(2, '0') : s + 's';
 }
-
 function renderLive() {
-  if (!liveStartedAt) return
-  const elapsed = fmtElapsed(Date.now() - liveStartedAt)
-  let line = '[' + elapsed + '] ' + (liveStage || '…')
-  if (liveDetail) line += ' — ' + liveDetail
-  document.getElementById('log').textContent = '> ' + line
+  if (!liveStartedAt) return;
+  let line = '[' + fmtElapsed(Date.now() - liveStartedAt) + '] ' + (liveStage || '…');
+  if (liveDetail) line += ' — ' + liveDetail;
+  document.getElementById('log').textContent = '> ' + line;
 }
-
 function startLive(stage) {
-  liveStage = stage || ''
-  liveDetail = ''
-  liveStartedAt = Date.now()
-  if (liveTimer) clearInterval(liveTimer)
-  liveTimer = setInterval(renderLive, 500)
-  renderLive()
+  liveStage = stage || ''; liveDetail = ''; liveStartedAt = Date.now();
+  if (liveTimer) clearInterval(liveTimer);
+  liveTimer = setInterval(renderLive, 500);
+  renderLive();
 }
-
 function stopLive(finalMessage) {
-  if (liveTimer) { clearInterval(liveTimer); liveTimer = null }
-  liveStartedAt = 0
-  liveStage = ''
-  liveDetail = ''
-  if (typeof finalMessage === 'string' && finalMessage) setLog(finalMessage)
+  if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  liveStartedAt = 0; liveStage = ''; liveDetail = '';
+  if (typeof finalMessage === 'string' && finalMessage) setLog(finalMessage);
 }
-
-// Subscribe once to progress events from main.js. Updates feed the live renderer.
 if (window.api && window.api.onProgress) {
   window.api.onProgress(payload => {
-    if (!payload) return
-    if (typeof payload.stage === 'string') liveStage = payload.stage
-    if (typeof payload.detail === 'string') liveDetail = payload.detail
-    renderLive()
-  })
+    if (!payload) return;
+    if (typeof payload.stage === 'string') liveStage = payload.stage;
+    if (typeof payload.detail === 'string') liveDetail = payload.detail;
+    renderLive();
+  });
 }
 
 async function execStep(s) {
-  setDot(s.id, 'running', s.checkNote || s.installNote)
-
-  // Fast check first (e.g. `where node`) — no live timer needed.
+  setDot(s.id, 'running', s.checkNote || s.installNote);
   if (s.checkStep) {
-    setLog(s.checkNote)
-    const chk = await window.api.runStep(s.checkStep)
-    setLog(chk.message)
-    if (chk.success) { setDot(s.id, 'ok', chk.message); return true }
-    setDot(s.id, 'running', s.installNote)
+    setLog(s.checkNote);
+    const chk = await window.api.runStep(s.checkStep);
+    setLog(chk.message);
+    if (chk.success) { setDot(s.id, 'ok', chk.message); return true; }
+    setDot(s.id, 'running', s.installNote);
   }
-
-  // Install action — long-running, show live timer + stage updates.
-  startLive(s.installNote.replace(/…$/, ''))
-  const res = await window.api.runStep(s.installStep)
-  stopLive(res.message)
-
-  if (!res.success) { setDot(s.id, 'fail', res.message); showError(res.message); return false }
-  setDot(s.id, 'ok', res.message)
-  return true
+  startLive((s.installNote || '').replace(/…$/, ''));
+  const res = await window.api.runStep(s.installStep);
+  stopLive(res.message);
+  if (!res.success) { setDot(s.id, 'fail', res.message); showError(res.message); return false; }
+  setDot(s.id, 'ok', res.message);
+  return true;
 }
 
 async function startInstall() {
-  show('installing')
-  buildList()
+  show('installing');
+  buildList();
 
-  // If Node.js is already present, skip winget + node steps entirely.
-  setLog('Detecting environment…')
-  const nodePresent = (await window.api.runStep('check-node')).success
+  setLog('Detecting environment…');
+  const nodePresent = (await window.api.runStep('check-node')).success;
 
-  let active
+  let active = ALL_STEPS;
   if (nodePresent) {
-    setDot('winget', 'skip', 'Not needed — Node.js already installed')
-    setDot('node',   'skip', 'Already installed')
-    active = ALL_STEPS.filter(s => s.id !== 'winget' && s.id !== 'node')
-  } else {
-    active = ALL_STEPS
+    setDot('winget', 'skip', 'Not needed — Node.js already installed');
+    setDot('node',   'skip', 'Already installed');
+    active = ALL_STEPS.filter(s => s.id !== 'winget' && s.id !== 'node');
   }
 
   for (let i = 0; i < active.length; i++) {
-    setProgress(Math.round((i / active.length) * 92))
-    const ok = await execStep(active[i])
-    if (!ok) return
+    setProgress(Math.round((i / active.length) * 92));
+    const ok = await execStep(active[i]);
+    if (!ok) return;
   }
 
-  setProgress(100)
-  await sleep(500)
-  show('done')
+  setProgress(100);
+  await sleep(500);
+  show('done');
 }
 
 function showError(msg) {
-  document.getElementById('err-msg').textContent = msg
-  show('error')
+  document.getElementById('err-msg').textContent = msg;
+  show('error');
 }
 
 function launch() {
-  window.api.runStep('launch-app')
-  window.api.close()
+  window.api.runStep('launch-app');
+  window.api.close();
+}
+
+// Platform-specific copy tweaks.
+if (!IS_WIN) {
+  document.getElementById('done-desc').innerHTML =
+    IS_MAC ? 'Axon installed. Find it in your Applications folder.'
+           : 'Axon installed. Find it in your applications menu.';
 }
 </script>
 </body>

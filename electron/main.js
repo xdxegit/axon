@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, screen, shell } from "electron";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +6,11 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const isDev = !app.isPackaged;
+// Smoke mode (CI): load the built bundle from disk, confirm the renderer paints,
+// then exit deterministically — a cross-OS "does it boot?" check. Forces the
+// production load path even though the app is unpackaged under `electron .`.
+const isSmoke = process.env.AXON_SMOKE === "1";
+const isDev = !app.isPackaged && !isSmoke;
 const execFileAsync = promisify(execFile);
 let omniRouteProcess = null;
 
@@ -36,22 +40,42 @@ function appendLog(message) {
 let mainWindow = null;
 
 function createWindow() {
+  const isMac = process.platform === "win32" ? false : process.platform === "darwin";
+
+  // Window chrome differs per platform:
+  //  • Windows / Linux — fully frameless; we draw our own min/max/close cluster.
+  //  • macOS — keep the native traffic-light buttons (users expect them on the
+  //    left) via `hiddenInset`; our custom cluster is hidden in the renderer and
+  //    the top bar is padded so content clears the lights.
+  const chrome = isMac
+    ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 14, y: 20 } }
+    : { frame: false, titleBarStyle: "hidden" };
+
   const win = new BrowserWindow({
     width: 1320,
     height: 860,
-    minWidth: 980,
-    minHeight: 680,
+    minWidth: 880,
+    minHeight: 600,
     icon: path.join(__dirname, "..", "build", "icon.ico"),
     backgroundColor: "#0f1117",
-    // Frameless: kill the native title bar and the default min/max/close overlay.
-    // We render our own controls in the top bar (`.window-controls` in App.jsx).
-    frame: false,
-    titleBarStyle: "hidden",
+    show: false,
+    ...chrome,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false
     }
+  });
+
+  // Avoid a white flash on slower machines / high-DPI displays: only paint once
+  // the renderer is ready. Maximize on very small screens so the fixed-width
+  // columns aren't cramped on, e.g., a 1366×768 laptop.
+  win.once("ready-to-show", () => {
+    try {
+      const { workAreaSize } = screen.getPrimaryDisplay();
+      if (workAreaSize.width <= 1366 || workAreaSize.height <= 800) win.maximize();
+    } catch { /* screen API unavailable in headless CI — ignore */ }
+    win.show();
   });
 
   mainWindow = win;
@@ -65,18 +89,47 @@ function createWindow() {
   win.on("maximize", sendMaxState);
   win.on("unmaximize", sendMaxState);
 
+  // Only ever hand http(s) URLs to the OS. Without this scheme allowlist a
+  // window.open() with file:, javascript:, or a custom protocol handler could be
+  // abused (e.g. via an XSS payload in a model response) to launch arbitrary
+  // local handlers. Everything else is denied outright.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  // Lock the main frame to the app bundle / dev server. A stray navigation
+  // (malicious link, redirect) must never replace the app with remote content,
+  // which would run with the preload bridge attached.
+  win.webContents.on("will-navigate", (event, url) => {
+    const allowed = isDev ? "http://127.0.0.1:5173" : "file://";
+    if (!url.startsWith(allowed)) {
+      event.preventDefault();
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    }
   });
 
   // ── Renderer diagnostics ───────────────────────────────────────────────────
   // White-screen-of-death almost always means the bundled JS failed to load.
   // Log every renderer failure so a packaged user can attach axon-main.log
   // (in %APPDATA%/Axon) when reporting a crash.
-  win.webContents.on("did-fail-load", (_e, code, desc, url) => {
+  win.webContents.on("did-fail-load", (_e, code, desc, url, isMainFrame) => {
     appendLog(`did-fail-load: ${code} ${desc} ${url}`);
+    if (isSmoke && isMainFrame) {
+      appendLog("SMOKE: main frame failed to load");
+      app.exit(1);
+    }
   });
+
+  if (isSmoke) {
+    // Pass once the renderer reports a finished paint; fail-safe timeout in case
+    // it never does (e.g. a bundle that throws before mount on this platform).
+    win.webContents.on("did-finish-load", () => {
+      appendLog("SMOKE: renderer loaded OK");
+      setTimeout(() => app.exit(0), 800);
+    });
+    setTimeout(() => { appendLog("SMOKE: timeout"); app.exit(1); }, 30000);
+  }
   win.webContents.on("render-process-gone", (_e, details) => {
     appendLog(`render-process-gone: ${JSON.stringify(details)}`);
   });
@@ -118,6 +171,10 @@ app.whenReady().then(async () => {
     await ensureOmniRouteVersion();
     await startLocalOmniRoute();
   };
+  // Skip the OmniRoute install/start side-effects entirely in smoke mode — we're
+  // only checking that the window boots, not provisioning the environment.
+  if (isSmoke) return;
+
   if (mainWindow) {
     mainWindow.webContents.once("did-finish-load", () => {
       // 600ms buffer: covers React mount + useEffect registration of app:toast.
@@ -577,11 +634,24 @@ ipcMain.handle("claude:check", async () => {
   return { available: present };
 });
 
+// Model ids reach us from the renderer's free-text "Модель" field AND from the
+// OmniRoute /v1/models response — neither is trustworthy. Before a model id is
+// allowed anywhere near a spawned process (env or, historically, a cmd title) we
+// constrain it to the characters real OmniRoute ids actually use. This blocks
+// shell-metacharacter injection (e.g. a hostile endpoint returning `x" & calc`).
+const MODEL_ID_RE = /^[A-Za-z0-9._:\/-]{1,128}$/;
+function assertSafeModel(model) {
+  if (!MODEL_ID_RE.test(model)) {
+    throw new Error("Недопустимый идентификатор модели — отменено в целях безопасности.");
+  }
+  return model;
+}
+
 ipcMain.handle("claude:launch", async (_event, payload) => {
   await refreshPathFromRegistry();
 
   const settings = payload?.settings || {};
-  const model = payload?.model || settings.model || "auto";
+  const model = assertSafeModel(payload?.model || settings.model || "auto");
   const baseUrl = String(settings.baseUrl || "http://localhost:20128/v1").replace(/\/+$/, "");
   // OmniRoute exposes both OpenAI- and Anthropic-format endpoints under the same host.
   // Claude Code expects the Anthropic root (no /v1 suffix).
@@ -604,11 +674,14 @@ ipcMain.handle("claude:launch", async (_event, payload) => {
   };
 
   if (process.platform === "win32") {
-    // `start "title" cmd.exe /K claude` — start consumes the first quoted arg as the window title.
-    // The new cmd window inherits our augmented env, so claude sees ANTHROPIC_* set correctly.
+    // `start "title" cmd.exe /K claude` — start consumes the first quoted arg as
+    // the window title. The title is a STATIC string on purpose: never splice the
+    // model id (or any renderer-supplied value) into the cmd command line, where
+    // cmd.exe's own re-parsing of quotes/`&`/`|` makes injection hard to escape.
+    // The model is passed safely via the child env (ANTHROPIC_MODEL) instead.
     spawn(
       "cmd.exe",
-      ["/c", "start", `Claude Code — ${model}`, "cmd.exe", "/K", "claude"],
+      ["/c", "start", "Claude Code", "cmd.exe", "/K", "claude"],
       {
         detached: true,
         stdio: "ignore",

@@ -1,40 +1,32 @@
 {
-  "name": "axon-setup",
-  "version": "1.1.1-beta",
+  "name": "axon-glow",
+  "version": "2.0.0-beta",
   "private": true,
+  "description": "Axon Glow — the installer for Axon.",
+  "author": "xdxegit <noreply@axon.studio>",
   "main": "main.js",
   "type": "module",
   "scripts": {
     "start": "electron .",
-    "dist": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\prebuild.ps1 && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win portable --x64"
+    "dist": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\prebuild.ps1 && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win portable --x64",
+    "dist:auto": "electron-builder"
   },
   "devDependencies": {
     "electron": "^37.0.0",
     "electron-builder": "^26.8.1"
   },
   "build": {
-    "appId": "local.axon.setup",
-    "productName": "Axon Setup",
+    "appId": "local.axon.glow",
+    "productName": "Axon Glow",
     "asar": true,
     "directories": {
       "output": "../release-installer-${version}"
     },
-    "icon": "build/icon.ico",
     "files": [
       "main.js",
       "preload.cjs",
       "index.html",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../release/Axon-x64.exe",
-        "to": "nsis.exe"
-      },
-      {
-        "from": "build/icon.ico",
-        "to": "icon.ico"
-      }
     ],
     "win": {
       "icon": "build/icon.ico",
@@ -43,7 +35,34 @@
       "target": [
         { "target": "portable", "arch": ["x64"] }
       ],
-      "artifactName": "Axon-Setup-${version}.exe"
+      "artifactName": "Axon-Glow-${version}.${ext}",
+      "extraResources": [
+        { "from": "../release/Axon-x64.exe", "to": "nsis.exe" },
+        { "from": "build/icon.ico", "to": "icon.ico" }
+      ]
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "identity": null,
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "artifactName": "Axon-Glow-${version}-mac-${arch}.${ext}",
+      "extraResources": [
+        { "from": "../release", "to": "payload", "filter": ["*.dmg"] }
+      ]
+    },
+    "linux": {
+      "category": "Utility",
+      "maintainer": "xdxegit <noreply@axon.studio>",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "artifactName": "Axon-Glow-${version}-linux-${arch}.${ext}",
+      "extraResources": [
+        { "from": "../release", "to": "payload", "filter": ["*.deb", "*.AppImage"] }
+      ]
     }
   }
 }

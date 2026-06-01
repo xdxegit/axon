@@ -7,6 +7,18 @@ import os from 'os'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Platform switches. The Windows path is the fully-automated, battle-tested one
+// (NSIS + winget + Restart-Manager). macOS/Linux take a lighter, best-effort path:
+// npm-based CLIs plus opening the bundled native Axon package for the user.
+const IS_WIN = process.platform === 'win32'
+const IS_MAC = process.platform === 'darwin'
+const IS_LINUX = process.platform === 'linux'
+
+// Cross-platform "is this binary on PATH?" — `where` on Windows, `command -v` elsewhere.
+function whichCmd(bin) {
+  return IS_WIN ? `where ${bin}` : `command -v ${bin}`
+}
+
 // Persistent diagnostic log for every install run. If the wizard exits unexpectedly
 // (e.g. NSIS aborts before our UI updates), the trail in this file tells us where.
 const SETUP_LOG = path.join(os.tmpdir(), 'axon-setup.log')
@@ -27,17 +39,21 @@ process.on('unhandledRejection', (reason) => {
 })
 
 app.whenReady().then(() => {
-  setupLog(`=== Axon Setup ${app.getVersion()} starting ===`)
+  setupLog(`=== Axon Glow ${app.getVersion()} starting === platform=${process.platform}`)
   win = new BrowserWindow({
-    width: 720,
-    height: 520,
+    width: 760,
+    height: 560,
+    // Frameless + transparent glass card on every OS, with our own min/close
+    // controls (no native traffic lights to depend on). Transparency needs a
+    // compositor on Linux; the stage paints a solid backdrop as a fallback.
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
     resizable: false,
     center: true,
     show: false,
     icon: app.isPackaged
-      ? path.join(process.resourcesPath, 'icon.ico')
+      ? path.join(process.resourcesPath, IS_WIN ? 'icon.ico' : 'icon.png')
       : path.join(__dirname, 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -191,6 +207,78 @@ function getNsisExe() {
 
 const APP_INSTALL_DIR = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Axon')
 
+// Locate the bundled native Axon package for the current OS. Packaged builds put
+// it under resources/payload (see installer/package.json extraResources); dev
+// falls back to the repo's release/ folder.
+function getPayload(extensions) {
+  const dirs = app.isPackaged
+    ? [path.join(process.resourcesPath, 'payload')]
+    : [path.join(__dirname, '..', 'release')]
+  for (const dir of dirs) {
+    try {
+      const hit = fs.readdirSync(dir).find(f => extensions.some(e => f.toLowerCase().endsWith(e)))
+      if (hit) return path.join(dir, hit)
+    } catch { /* dir missing — try next */ }
+  }
+  return null
+}
+
+// macOS / Linux app install. Best-effort and tested via CI on real runners; the
+// Windows NSIS flow remains the primary, fully-verified path.
+async function installAppUnix() {
+  if (IS_MAC) {
+    const dmg = getPayload(['.dmg'])
+    if (!dmg) return { success: false, message: 'Bundled Axon .dmg not found in installer resources.' }
+    emitProgress({ stage: 'Mounting Axon.dmg' })
+    // Attach, copy Axon.app into the user's ~/Applications (no admin needed), detach.
+    const mnt = path.join(os.tmpdir(), `axon-dmg-${Date.now()}`)
+    const userApps = path.join(os.homedir(), 'Applications')
+    const att = await runCmd(`hdiutil attach "${dmg}" -nobrowse -mountpoint "${mnt}"`, 120000)
+    if (!att.success) { await runCmd(`open "${dmg}"`).catch(() => {}); return { success: true, message: 'Opened Axon.dmg — drag Axon to Applications.' } }
+    // Remove any previous Axon.app first (quit it if running) so stale files from
+    // an older version don't linger — `cp -R` would otherwise merge over them.
+    const oldApp = path.join(userApps, 'Axon.app')
+    if (fs.existsSync(oldApp)) {
+      emitProgress({ stage: 'Removing previous Axon' })
+      await runCmd('osascript -e \'quit app "Axon"\'').catch(() => {})
+      await runCmd('pkill -f Axon.app').catch(() => {})
+      await new Promise(r => setTimeout(r, 800))
+      await runCmd(`rm -rf "${oldApp}"`, 60000).catch(() => {})
+    }
+    emitProgress({ stage: 'Copying Axon to Applications' })
+    await runCmd(`mkdir -p "${userApps}" && cp -R "${mnt}/Axon.app" "${userApps}/"`, 120000).catch(() => {})
+    await runCmd(`hdiutil detach "${mnt}" -quiet`, 60000).catch(() => {})
+    const ok = fs.existsSync(path.join(userApps, 'Axon.app'))
+    return ok ? { success: true, message: 'Axon installed to ~/Applications' }
+              : { success: false, message: 'Could not copy Axon.app — open the .dmg and drag it manually.' }
+  }
+
+  // Linux: prefer the .deb (apt resolves deps); else stage the AppImage.
+  const deb = getPayload(['.deb'])
+  if (deb && (await runCmd('command -v pkexec')).success && (await runCmd('command -v apt-get')).success) {
+    emitProgress({ stage: 'Installing Axon (.deb)', detail: 'pkexec apt-get install' })
+    const r = await runCmd(`pkexec apt-get install -y "${deb}"`, 300000)
+    if (r.success) return { success: true, message: 'Axon installed' }
+    const d = await runCmd(`pkexec dpkg -i "${deb}"`, 300000)
+    if (d.success) return { success: true, message: 'Axon installed' }
+    return { success: false, message: 'Axon .deb install failed: ' + (r.stderr || d.stderr || '').slice(0, 400) }
+  }
+  const appImg = getPayload(['.appimage'])
+  if (appImg) {
+    emitProgress({ stage: 'Installing Axon (AppImage)' })
+    const dest = path.join(os.homedir(), '.local', 'bin', 'Axon.AppImage')
+    try {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.copyFileSync(appImg, dest)
+      fs.chmodSync(dest, 0o755)
+      return { success: true, message: `Axon installed to ${dest}` }
+    } catch (e) {
+      return { success: false, message: 'AppImage install failed: ' + e.message }
+    }
+  }
+  return { success: false, message: 'No bundled Axon package (.deb/.AppImage) found in installer resources.' }
+}
+
 // ── IPC handlers ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('run-step', async (_e, step) => {
@@ -239,35 +327,55 @@ async function runStep(step) {
     }
 
     case 'check-node': {
-      const r = await runCmd('where node')
+      const r = await runCmd(whichCmd('node'))
       return { success: r.success, message: r.success ? 'Node.js found' : 'Node.js not found' }
     }
 
     case 'install-node': {
-      emitProgress({ stage: 'Downloading Node.js LTS via winget', detail: 'This usually takes 30–90 seconds' })
-      // winget output: stdout often contains the failure detail (exit code, hash mismatch),
-      // not stderr. Surface both so the UI shows something actionable.
-      const r = await runCmd(
-        'winget install --id OpenJS.NodeJS.LTS -e --source winget ' +
-        '--accept-package-agreements --accept-source-agreements --silent',
-        300000
-      )
-
-      // Always refresh PATH — even on partial success node/npm may be on disk but not in env.
-      await refreshPath()
-
-      const nodeNowPresent = (await runCmd('where node')).success
-      if (nodeNowPresent) {
-        return { success: true, message: 'Node.js installed' }
+      if (IS_WIN) {
+        emitProgress({ stage: 'Downloading Node.js LTS via winget', detail: 'This usually takes 30–90 seconds' })
+        // winget output: stdout often carries the failure detail (exit code, hash
+        // mismatch), not stderr. Surface both so the UI shows something actionable.
+        const r = await runCmd(
+          'winget install --id OpenJS.NodeJS.LTS -e --source winget ' +
+          '--accept-package-agreements --accept-source-agreements --silent',
+          300000
+        )
+        await refreshPath()
+        if ((await runCmd(whichCmd('node'))).success) return { success: true, message: 'Node.js installed' }
+        const detail = (r.stderr || r.stdout || '').slice(0, 500) || 'unknown error'
+        return { success: false, message: 'Node.js install failed: ' + detail }
       }
 
-      const detail = (r.stderr || r.stdout || '').slice(0, 500) || 'unknown error'
-      return { success: false, message: 'Node.js install failed: ' + detail }
+      if (IS_MAC) {
+        // Homebrew is the de-facto macOS package manager and needs no sudo prompt.
+        if (!(await runCmd('command -v brew')).success) {
+          return { success: false, message: 'Node.js not found. Install it from nodejs.org or run: brew install node' }
+        }
+        emitProgress({ stage: 'Installing Node.js via Homebrew', detail: 'brew install node' })
+        const r = await runCmd('brew install node', 300000)
+        if ((await runCmd(whichCmd('node'))).success) return { success: true, message: 'Node.js installed' }
+        return { success: false, message: 'Node.js install failed: ' + (r.stderr || r.stdout || '').slice(0, 500) }
+      }
+
+      // Linux: use the distro package manager via pkexec (shows a graphical
+      // password prompt on most desktops). Falls back to guidance if unavailable.
+      const mgr =
+        (await runCmd('command -v apt-get')).success ? 'apt-get install -y nodejs npm' :
+        (await runCmd('command -v dnf')).success     ? 'dnf install -y nodejs npm' :
+        (await runCmd('command -v pacman')).success   ? 'pacman -S --noconfirm nodejs npm' : null
+      if (!mgr || !(await runCmd('command -v pkexec')).success) {
+        return { success: false, message: 'Node.js not found. Install it via your package manager (e.g. sudo apt install nodejs npm).' }
+      }
+      emitProgress({ stage: 'Installing Node.js', detail: mgr })
+      const r = await runCmd(`pkexec ${mgr}`, 300000)
+      if ((await runCmd(whichCmd('node'))).success) return { success: true, message: 'Node.js installed' }
+      return { success: false, message: 'Node.js install failed: ' + (r.stderr || r.stdout || '').slice(0, 500) }
     }
 
     case 'check-omniroute': {
       // 1) Verify the binary is on PATH at all.
-      const r = await runCmd('where omniroute')
+      const r = await runCmd(whichCmd('omniroute'))
       if (!r.success) return { success: false, message: 'OmniRoute CLI not found' }
       // 2) Verify the version. 3.7.9 has a broken Settings button, so anything
       //    not matching the pinned 3.7.7 falls through to the install step.
@@ -297,7 +405,7 @@ async function runStep(step) {
 
       await refreshPath()
 
-      const present = (await runCmd('where omniroute')).success
+      const present = (await runCmd(whichCmd('omniroute'))).success
       if (present) {
         return { success: true, message: 'OmniRoute CLI 3.7.7 installed' }
       }
@@ -307,7 +415,7 @@ async function runStep(step) {
     }
 
     case 'check-claude': {
-      const r = await runCmd('where claude')
+      const r = await runCmd(whichCmd('claude'))
       return { success: r.success, message: r.success ? 'Claude Code CLI found' : 'Claude Code CLI not found' }
     }
 
@@ -320,7 +428,7 @@ async function runStep(step) {
 
       await refreshPath()
 
-      const present = (await runCmd('where claude')).success
+      const present = (await runCmd(whichCmd('claude'))).success
       if (present) {
         return { success: true, message: 'Claude Code CLI installed' }
       }
@@ -330,6 +438,10 @@ async function runStep(step) {
     }
 
     case 'install-app': {
+      // macOS/Linux take the lightweight path (open / install the bundled native
+      // package). Windows continues with the full NSIS replacement flow below.
+      if (!IS_WIN) return await installAppUnix()
+
       const nsisSource = getNsisExe()
       setupLog(`install-app: nsisSource=${nsisSource}`)
       if (!nsisSource || !fs.existsSync(nsisSource)) {
@@ -526,12 +638,21 @@ async function runStep(step) {
     }
 
     case 'launch-app': {
-      const exePath = path.join(APP_INSTALL_DIR, 'Axon.exe')
-      if (fs.existsSync(exePath)) {
-        shell.openPath(exePath)
-      } else {
-        // Fallback: open start menu shortcut via shell
-        shell.openExternal('shell:AppsFolder')
+      if (IS_WIN) {
+        const exePath = path.join(APP_INSTALL_DIR, 'Axon.exe')
+        if (fs.existsSync(exePath)) shell.openPath(exePath)
+        else shell.openExternal('shell:AppsFolder')
+        return { success: true }
+      }
+      if (IS_MAC) {
+        await runCmd('open -a Axon').catch(() => {})
+        return { success: true }
+      }
+      // Linux: try the installed binary, else the AppImage we may have placed.
+      if ((await runCmd(whichCmd('axon'))).success) { await runCmd('axon &').catch(() => {}) }
+      else {
+        const appImg = path.join(os.homedir(), '.local', 'bin', 'Axon.AppImage')
+        if (fs.existsSync(appImg)) await runCmd(`"${appImg}" &`).catch(() => {})
       }
       return { success: true }
     }

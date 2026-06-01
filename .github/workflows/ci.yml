@@ -1,0 +1,56 @@
+name: CI
+
+# Builds and boot-tests Axon on all three desktop OSes for every push / PR.
+# This does NOT produce installers (that's release.yml) — it packs the app
+# unpacked (fast) and launches it headlessly to confirm the renderer paints.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer (Vite)
+        run: npm run build
+
+      - name: Pack app (unpacked, no installers)
+        run: npx electron-builder --dir
+        env:
+          # No code-signing in CI — we're only validating that packaging works.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # ── Headless boot test ──────────────────────────────────────────────────
+      # AXON_SMOKE=1 makes electron/main.js load the built bundle, wait for the
+      # renderer to paint, then exit 0 (or exit 1 on load failure / timeout).
+      - name: Smoke launch (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx electron . --no-sandbox
+        env:
+          AXON_SMOKE: "1"
+
+      - name: Smoke launch (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: npx electron .
+        env:
+          AXON_SMOKE: "1"

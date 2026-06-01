@@ -1,3 +1,67 @@
+# What's new in Axon 2.0.0-beta
+
+A major visual + platform release. Axon gets a full redesign with switchable interface styles, color palettes and layouts; a configurable command-bar workspace; real multi-chat sessions; first-class Windows / macOS / Linux support with CI; a hardening security pass; and a redesigned cross-platform installer, **Axon Glow**.
+
+This release is still beta — feedback and bug reports are welcome.
+
+---
+
+## Highlights
+
+- **Two interface styles, six palettes.** Pick **Aurora Glass** (dense liquid glass) or **Spotlight** (soft warm floating panels) in Settings. Each style ships 3 color gammas — Aurora: Бирюза / Фиолет / Лазурь, Spotlight: Янтарь / Роза / Небо — every one with a dark and light theme. The whole UI is driven by CSS custom properties, so recoloring is instant.
+- **Three switchable layouts.** *Классический* (single sidebar), *Классический + список чатов* (adds a sessions column), and *Command Bar* (icon rail + chat list + chat + routing/cost inspector). All adapt to the chosen style and palette.
+- **Configurable Command Bar.** Toggle the **chat-list**, **routing** and **cost** panels independently from Settings.
+- **Real chat sessions.** New multi-session store with a searchable chat list — create, switch, rename (auto from first message) and delete chats. Legacy single-thread state is migrated automatically.
+- **Cross-platform.** Platform-aware window chrome (native traffic lights on macOS, custom controls on Windows/Linux), responsive layout for any screen size, and `electron-builder` targets for Windows (NSIS), macOS (dmg/zip, x64 + arm64) and Linux (AppImage / deb / rpm / tar.gz).
+- **GitHub Actions CI/CD.** `ci.yml` builds and headlessly boot-tests the app on all three OSes for every push; `release.yml` builds installers per OS and attaches them to a GitHub Release on tag.
+- **Axon Glow installer.** The setup wizard was redesigned (a shimmering iridescent light), renamed from *Axon Setup* to **Axon Glow**, made cross-platform, and clean removal of a previous Axon version now runs on all three OSes.
+- **Security hardening.** CSP added, model ids validated before any process launch, `openExternal`/navigation locked to http(s), and a documented review of the IPC surface.
+
+---
+
+## Appearance system
+
+Settings → **Интерфейс** now controls:
+
+| Control | Options |
+| --- | --- |
+| Стиль | Aurora Glass · Spotlight |
+| Цветовая гамма | 3 per style (live swatches) |
+| Тема | Тёмная · Светлая |
+| Раскладка | Классический · Классический + список чатов · Command Bar |
+| Панели Command Bar | Список чатов · Маршрутизация · Стоимость (independent toggles) |
+
+Palettes are defined in `src/theme.js` as a flat set of CSS variables applied to `<html>`; structural style differences (dense glass vs floating cards) come from `[data-ui-style]` rules in `src/styles.css` + `src/appearance.css`.
+
+---
+
+## Cross-platform & CI
+
+- **Window chrome** is platform-aware: macOS keeps native traffic lights (`hiddenInset`), Windows/Linux are frameless with custom min/max/close controls. The window paints only when ready (no white flash) and auto-maximizes on small displays.
+- **Responsive layout**: auxiliary columns shrink then hide on narrow windows, the settings drawer becomes an overlay rather than squeezing the chat, and `prefers-reduced-motion` is honored.
+- **Build matrix**: run `npm run dist:auto` to build for the host OS, or let `.github/workflows/release.yml` build all three on tag push.
+- **Boot smoke test**: `AXON_SMOKE=1` loads the built bundle, confirms the renderer paints, and exits — used by `.github/workflows/ci.yml` on Windows, macOS and Linux (via xvfb).
+
+---
+
+## Axon Glow (installer)
+
+The standalone setup wizard is now **Axon Glow**:
+
+- Redesigned UI — dark glass card with a rotating iridescent "светлечок" (conic-gradient ring + hue-shifting halo + travelling sheen on the logo, button and progress bar).
+- Cross-platform: Windows runs the bundled NSIS flow; macOS installs the bundled `.dmg` into `~/Applications`; Linux installs the bundled `.deb` (`pkexec apt-get`/`dpkg`) or stages the `.AppImage`.
+- **Old-version removal on every OS** — Windows kills running Axon/OmniRoute, runs the previous uninstaller and force-cleans the directory; macOS quits and removes the old `Axon.app`; Linux upgrades in place via the package manager.
+
+---
+
+## Security hardening
+
+- **Content-Security-Policy** added to the renderer — no remote script origins, so an XSS that slips past React's escaping still can't pull remote code into the `omni`/`winctl` bridges.
+- **Model-id validation** (`assertSafeModel`) before Claude Code launch — model ids from the free-text field *and* the OmniRoute `/v1/models` response are constrained to a safe charset, blocking shell-metacharacter injection. The window title is now static (the model is passed only via env).
+- **External links / navigation** restricted to `http(s)`; stray navigations can't replace the app frame.
+
+---
+
 # What's new in Axon 1.1.1-beta
 
 The first beta after 1.0.3-beta. It pulls together a long list of small reliability fixes, a brand-new attachment workflow, automatic OmniRoute version management, and the groundwork for cross-platform builds.

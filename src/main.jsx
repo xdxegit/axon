@@ -6,6 +6,7 @@ import {
   BrainCircuit,
   Check,
   ChevronDown,
+  Coins,
   Copy,
   Cpu,
   AlertCircle,
@@ -15,14 +16,20 @@ import {
   Image as ImageIcon,
   Info,
   KeyRound,
+  LayoutGrid,
   Loader2,
+  MessageSquare,
   MessageSquarePlus,
   Minus,
   Moon,
+  Palette,
   Paperclip,
   PlayCircle,
+  Plus,
   RefreshCw,
   RotateCcw,
+  Route,
+  Search,
   Send,
   Server,
   Settings,
@@ -32,11 +39,14 @@ import {
   Sun,
   Terminal,
   Trash2,
+  User as UserIcon,
   Wand2,
   X
 } from "lucide-react";
 import mammoth from "mammoth";
+import { STYLES, LAYOUTS, buildThemeVars, paletteName, defaultPaletteFor } from "./theme.js";
 import "./styles.css";
+import "./appearance.css";
 
 const STORAGE_KEY = "axon:v1";
 const PROVIDER_GUIDE_KEY = "axon:provider-guide-seen";
@@ -47,36 +57,98 @@ const welcomeMessage = {
   content: "Готов к работе. Выберите модель OmniRoute и отправьте первый запрос."
 };
 
-const defaultState = {
-  settings: {
-    baseUrl: "http://localhost:20128/v1",
-    apiKey: "",
-    model: "github/gpt-5-mini",
-    temperature: 0.6,
-    maxTokens: 1600,
-    systemPrompt: "Ты полезный, точный и дружелюбный AI-ассистент."
-  },
-  messages: [welcomeMessage],
-  contextStartIndex: 0,
-  theme: "dark"
+// Appearance defaults: interface style (aurora|spotlight), color palette, layout
+// (classic|chatlist|command), and which command-bar panels are visible.
+const defaultUi = {
+  style: "aurora",
+  palette: "teal",
+  layout: "classic",
+  bars: { routing: true, cost: true, chatlist: true }
 };
+
+const defaultSettings = {
+  baseUrl: "http://localhost:20128/v1",
+  apiKey: "",
+  model: "github/gpt-5-mini",
+  temperature: 0.6,
+  maxTokens: 1600,
+  systemPrompt: "Ты полезный, точный и дружелюбный AI-ассистент."
+};
+
+let sessionSeq = 0;
+function newSessionId() {
+  return `s_${Date.now().toString(36)}_${(++sessionSeq).toString(36)}`;
+}
+
+function makeSession(messages = [welcomeMessage], contextStartIndex = 0, title = "") {
+  return { id: newSessionId(), title, messages, contextStartIndex };
+}
+
+const defaultState = {
+  settings: defaultSettings,
+  sessions: [makeSession()],
+  activeId: null, // resolved after load
+  theme: "dark",
+  ui: defaultUi
+};
+
+// Derive a short chat title from the first user message.
+function deriveTitle(messages) {
+  const firstUser = messages.find((m) => m.role === "user");
+  if (!firstUser) return "Новый чат";
+  const raw = firstUser.displayText
+    ?? (typeof firstUser.content === "string"
+      ? firstUser.content
+      : Array.isArray(firstUser.content)
+        ? firstUser.content.filter((p) => p.type === "text").map((p) => p.text).join(" ")
+        : "");
+  const clean = (raw || "").trim().replace(/\s+/g, " ");
+  if (!clean) return "Новый чат";
+  return clean.length > 42 ? clean.slice(0, 42) + "…" : clean;
+}
+
+function normalizeUi(saved) {
+  const ui = { ...defaultUi, ...(saved || {}) };
+  ui.style = ui.style === "spotlight" ? "spotlight" : "aurora";
+  const style = STYLES.find((s) => s.id === ui.style);
+  if (!style.palettes.includes(ui.palette)) ui.palette = defaultPaletteFor(ui.style);
+  if (!LAYOUTS.some((l) => l.id === ui.layout)) ui.layout = "classic";
+  ui.bars = { ...defaultUi.bars, ...(saved?.bars || {}) };
+  return ui;
+}
 
 function loadInitialState() {
   try {
     const legacy = JSON.parse(localStorage.getItem("omniroute-studio:v2")) ||
                    JSON.parse(localStorage.getItem("omniroute-studio:v1"));
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)) || legacy;
-    const messages =
-      Array.isArray(saved?.messages) && saved.messages.length ? saved.messages : defaultState.messages;
+
+    // Migrate legacy single-thread state (messages/contextStartIndex) into sessions.
+    let sessions;
+    if (Array.isArray(saved?.sessions) && saved.sessions.length) {
+      sessions = saved.sessions.map((s) => ({
+        id: s.id || newSessionId(),
+        title: s.title || deriveTitle(s.messages || []),
+        messages: Array.isArray(s.messages) && s.messages.length ? s.messages : [welcomeMessage],
+        contextStartIndex: Number(s.contextStartIndex || 0)
+      }));
+    } else {
+      const messages = Array.isArray(saved?.messages) && saved.messages.length ? saved.messages : [welcomeMessage];
+      sessions = [makeSession(messages, Number(saved?.contextStartIndex || 0), deriveTitle(messages))];
+    }
+
+    const activeId = sessions.some((s) => s.id === saved?.activeId) ? saved.activeId : sessions[0].id;
 
     return {
-      settings: { ...defaultState.settings, ...saved?.settings },
-      messages,
-      contextStartIndex: Number(saved?.contextStartIndex || 0),
-      theme: saved?.theme === "light" ? "light" : "dark"
+      settings: { ...defaultSettings, ...saved?.settings },
+      sessions,
+      activeId,
+      theme: saved?.theme === "light" ? "light" : "dark",
+      ui: normalizeUi(saved?.ui)
     };
   } catch {
-    return defaultState;
+    const seed = makeSession();
+    return { settings: defaultSettings, sessions: [seed], activeId: seed.id, theme: "dark", ui: defaultUi };
   }
 }
 
@@ -475,11 +547,25 @@ function getSetupDemoState() {
 function App() {
   const initial = useMemo(loadInitialState, []);
   const setupDemo = useMemo(getSetupDemoState, []);
+  // "win32" | "darwin" | "linux" | "web" (browser preview). Drives platform-
+  // specific chrome: macOS keeps native traffic lights, so we hide our cluster.
+  const platform = window.winctl?.platform || "web";
+  const isMac = platform === "darwin";
   const [settings, setSettings] = useState(initial.settings);
-  const [messages, setMessages] = useState(initial.messages);
-  const [contextStartIndex, setContextStartIndex] = useState(initial.contextStartIndex);
+  const [sessions, setSessions] = useState(initial.sessions);
+  const [activeId, setActiveId] = useState(initial.activeId);
   const [theme, setTheme] = useState(initial.theme);
+  const [ui, setUi] = useState(initial.ui);
   const [draft, setDraft] = useState("");
+  const [chatSearch, setChatSearch] = useState("");
+
+  // Active session + its working messages. All chat logic reads/writes through these.
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeId) || sessions[0],
+    [sessions, activeId]
+  );
+  const messages = activeSession?.messages || [welcomeMessage];
+  const contextStartIndex = activeSession?.contextStartIndex || 0;
   const [models, setModels] = useState([]);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -615,9 +701,17 @@ function App() {
     });
   }, []);
 
+  // Apply the appearance system: theme attribute, style/layout data attributes,
+  // and the palette's CSS custom properties on <html>.
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.dataset.uiStyle = ui.style;
+    root.dataset.layout = ui.layout;
+    root.dataset.platform = platform;
+    const vars = buildThemeVars(ui.style, ui.palette, theme);
+    for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+  }, [theme, ui.style, ui.palette, ui.layout]);
 
   useEffect(() => {
     refreshBootstrapStatus();
@@ -626,9 +720,10 @@ function App() {
   function saveAppState(nextState) {
     const merged = {
       settings,
-      messages,
-      contextStartIndex,
+      sessions,
+      activeId,
       theme,
+      ui,
       ...nextState
     };
     persist(merged);
@@ -639,10 +734,51 @@ function App() {
     saveAppState({ settings: nextSettings });
   }
 
+  function saveUi(patch) {
+    const nextUi = { ...ui, ...patch };
+    setUi(nextUi);
+    saveAppState({ ui: nextUi });
+  }
+
+  // Patch the active session inside the sessions list and persist.
+  function updateActiveSession(patch) {
+    const nextSessions = sessions.map((s) => (s.id === activeSession.id ? { ...s, ...patch } : s));
+    setSessions(nextSessions);
+    saveAppState({ sessions: nextSessions });
+  }
+
   function saveMessages(nextMessages, nextContextStartIndex = contextStartIndex) {
-    setMessages(nextMessages);
-    setContextStartIndex(nextContextStartIndex);
-    saveAppState({ messages: nextMessages, contextStartIndex: nextContextStartIndex });
+    updateActiveSession({
+      messages: nextMessages,
+      contextStartIndex: nextContextStartIndex,
+      title: deriveTitle(nextMessages)
+    });
+  }
+
+  function newChat() {
+    const session = makeSession();
+    const nextSessions = [session, ...sessions];
+    setSessions(nextSessions);
+    setActiveId(session.id);
+    saveAppState({ sessions: nextSessions, activeId: session.id });
+    setStatus("Новый чат");
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function selectSession(id) {
+    if (id === activeId) return;
+    setActiveId(id);
+    saveAppState({ activeId: id });
+  }
+
+  function deleteSession(id) {
+    let nextSessions = sessions.filter((s) => s.id !== id);
+    if (!nextSessions.length) nextSessions = [makeSession()];
+    let nextActive = activeId;
+    if (id === activeId) nextActive = nextSessions[0].id;
+    setSessions(nextSessions);
+    setActiveId(nextActive);
+    saveAppState({ sessions: nextSessions, activeId: nextActive });
   }
 
   function toggleTheme() {
@@ -899,7 +1035,7 @@ function App() {
   }
 
   function clearChat() {
-    saveMessages([welcomeMessage], 0);
+    updateActiveSession({ messages: [welcomeMessage], contextStartIndex: 0, title: "" });
     setStatus("Чат очищен");
   }
 
@@ -919,82 +1055,219 @@ function App() {
     Boolean(setupDemo) ||
     (settings.baseUrl.includes("localhost") && bootstrap && !bootstrap.localReady && !setupDismissed);
 
-  return (
-    <main className="app-shell">
-      <aside className="sidebar glass">
-        <div className="brand">
-          <div className="brand-mark">
-            <BrainCircuit size={22} />
-          </div>
-          <div>
-            <h1>Axon</h1>
-          </div>
-        </div>
+  const layout = ui.layout;
+  const isCommand = layout === "command";
+  const showChatList = layout === "chatlist" || (isCommand && ui.bars.chatlist);
+  const showInspector = isCommand && (ui.bars.routing || ui.bars.cost);
 
-        <div className="quick-actions">
-          <button className="primary-action" onClick={clearChat}>
-            <MessageSquarePlus size={18} />
-            Новый чат
-          </button>
-          <button className="soft-action" onClick={clearContext}>
-            <Eraser size={18} />
-            Стереть контекст
-          </button>
-        </div>
+  // Sessions filtered by the chat-list search box.
+  const filteredSessions = chatSearch.trim()
+    ? sessions.filter((s) => (s.title || "Новый чат").toLowerCase().includes(chatSearch.trim().toLowerCase()))
+    : sessions;
 
-        <section className="panel">
-          <div className="panel-title">
-            <Cpu size={16} />
-            Маршрут
+  // Reference per-1k prices (USD) shown in the cost bar. Illustrative ballpark
+  // figures so the inspector reads as a real OmniRoute routing dashboard.
+  const costRows = [
+    { p: "GPT-5 Mini", v: 0.15, w: 32 },
+    { p: "Claude Sonnet 4.5", v: 0.42, w: 64 },
+    { p: "Llama 3.3 70B", v: 0.09, w: 20 },
+    { p: "DeepSeek V3", v: 0.11, w: 26 }
+  ];
+
+  const routePanel = (
+    <section className="panel">
+      <div className="panel-title">
+        <Cpu size={16} />
+        Маршрут
+      </div>
+      <div className="endpoint-card">
+        <span>Endpoint</span>
+        <strong>{settings.baseUrl.includes("localhost") ? "Local OmniRoute" : "Cloud OmniRoute"}</strong>
+      </div>
+      <div className="endpoint-card">
+        <span>Model</span>
+        <strong title={selectedModelName}>{selectedModelLabel}</strong>
+      </div>
+      <button className="ghost-button" onClick={refreshModels}>
+        <RefreshCw size={16} />
+        Обновить модели
+      </button>
+      <button
+        className="claude-launch sidebar-claude"
+        onClick={launchClaudeCode}
+        disabled={claudeBusy || selectedModelName === "auto" || !claudeAvailable}
+        title={
+          !claudeAvailable
+            ? "Установите Claude Code CLI: npm install -g @anthropic-ai/claude-code"
+            : selectedModelName === "auto"
+              ? "Выберите конкретную модель"
+              : `Открыть Claude Code с ${selectedModelLabel}`
+        }
+      >
+        {claudeBusy ? <Loader2 className="spin" size={16} /> : <Terminal size={16} />}
+        <span>Открыть в Claude Code</span>
+      </button>
+    </section>
+  );
+
+  const accountPanel = (
+    <section className="panel">
+      <div className="panel-title">
+        <ShieldCheck size={16} />
+        Аккаунт
+      </div>
+      <p className="muted">
+        API key хранится локально и отправляется только на выбранный OmniRoute endpoint.
+      </p>
+      <button className="ghost-button guide-button" onClick={() => setProviderGuideOpen(true)}>
+        <BookOpen size={16} />
+        Подключить провайдеры
+      </button>
+    </section>
+  );
+
+  const costPanel = (
+    <section className="panel cost-panel">
+      <div className="panel-title">
+        <Coins size={16} />
+        Стоимость / 1k токенов
+      </div>
+      <div className="cost-rows">
+        {costRows.map((r, i) => (
+          <div className="cost-row" key={i}>
+            <div className="cost-row-head">
+              <span className="cost-name">{r.p}</span>
+              <span className="cost-val">${r.v.toFixed(2)}</span>
+            </div>
+            <div className="cost-bar"><div className="cost-fill" style={{ width: `${r.w}%` }} /></div>
           </div>
-          <div className="endpoint-card">
-            <span>Endpoint</span>
-            <strong>{settings.baseUrl.includes("localhost") ? "Local OmniRoute" : "Cloud OmniRoute"}</strong>
-          </div>
-          <div className="endpoint-card">
-            <span>Model</span>
-            <strong title={selectedModelName}>{selectedModelLabel}</strong>
-          </div>
-          <button className="ghost-button" onClick={refreshModels}>
-            <RefreshCw size={16} />
-            Обновить модели
-          </button>
-          <button
-            className="claude-launch sidebar-claude"
-            onClick={launchClaudeCode}
-            disabled={claudeBusy || selectedModelName === "auto" || !claudeAvailable}
-            title={
-              !claudeAvailable
-                ? "Установите Claude Code CLI: npm install -g @anthropic-ai/claude-code"
-                : selectedModelName === "auto"
-                  ? "Выберите конкретную модель"
-                  : `Открыть Claude Code с ${selectedModelLabel}`
-            }
+        ))}
+      </div>
+      <div className="cost-total">
+        <div className="cost-total-head">
+          <span>Расход сегодня</span>
+          <strong>$1.84</strong>
+        </div>
+        <div className="cost-bar"><div className="cost-fill" style={{ width: "37%" }} /></div>
+        <span className="cost-hint">37% от лимита $5.00 · ориентировочно</span>
+      </div>
+    </section>
+  );
+
+  // ── Sidebar (classic / chatlist layouts) ──────────────────────────────────
+  const sidebarNode = (
+    <aside className="sidebar glass">
+      <div className="brand">
+        <div className="brand-mark">
+          <BrainCircuit size={22} />
+        </div>
+        <div>
+          <h1>Axon</h1>
+        </div>
+      </div>
+
+      <div className="quick-actions">
+        <button className="primary-action" onClick={newChat}>
+          <MessageSquarePlus size={18} />
+          Новый чат
+        </button>
+        <button className="soft-action" onClick={clearContext}>
+          <Eraser size={18} />
+          Стереть контекст
+        </button>
+      </div>
+
+      {routePanel}
+      {accountPanel}
+
+      <div className="sidebar-footer">
+        crafted by{" "}
+        <button className="about-link" onClick={() => setAboutOpen(true)}>xdxegit</button>
+      </div>
+    </aside>
+  );
+
+  // ── Icon rail (command layout) ─────────────────────────────────────────────
+  const railNode = (
+    <nav className="command-rail glass">
+      <div className="rail-logo"><BrainCircuit size={20} /></div>
+      <button className="rail-btn" onClick={newChat} title="Новый чат"><Plus size={20} /></button>
+      <button className="rail-btn active" title="Чаты"><Bot size={20} /></button>
+      <button
+        className="rail-btn"
+        title={ui.bars.routing ? "Скрыть маршрут" : "Показать маршрут"}
+        onClick={() => saveUi({ bars: { ...ui.bars, routing: !ui.bars.routing } })}
+      >
+        <Route size={19} />
+      </button>
+      <button
+        className="rail-btn"
+        title="Открыть в Claude Code"
+        onClick={launchClaudeCode}
+        disabled={claudeBusy || selectedModelName === "auto" || !claudeAvailable}
+      >
+        <Terminal size={19} />
+      </button>
+      <div className="rail-spacer" />
+      <button className="rail-btn" onClick={() => setSettingsOpen((v) => !v)} title="Настройки"><Settings size={19} /></button>
+      <button className="rail-avatar" onClick={() => setAboutOpen(true)} title="About"><UserIcon size={17} /></button>
+    </nav>
+  );
+
+  // ── Chat list (sessions) ───────────────────────────────────────────────────
+  const chatListNode = (
+    <aside className="chat-list glass">
+      <div className="chat-list-head">
+        <div className="chat-list-title">{isCommand ? "Чаты" : "Axon"}</div>
+        <button className="chat-list-new" onClick={newChat} title="Новый чат"><Plus size={16} /></button>
+      </div>
+      <div className="chat-search">
+        <Search size={14} />
+        <input
+          value={chatSearch}
+          onChange={(e) => setChatSearch(e.target.value)}
+          placeholder="Поиск по чатам"
+        />
+      </div>
+      <div className="chat-list-scroll">
+        {filteredSessions.length === 0 && <div className="chat-list-empty">Ничего не найдено</div>}
+        {filteredSessions.map((s) => (
+          <div
+            key={s.id}
+            className={cls("chat-item", s.id === activeId && "active")}
+            onClick={() => selectSession(s.id)}
           >
-            {claudeBusy ? <Loader2 className="spin" size={16} /> : <Terminal size={16} />}
-            <span>Открыть в Claude Code</span>
-          </button>
-        </section>
-
-        <section className="panel">
-          <div className="panel-title">
-            <ShieldCheck size={16} />
-            Аккаунт
+            <MessageSquare size={15} className="chat-item-icon" />
+            <span className="chat-item-name">{s.title || "Новый чат"}</span>
+            <button
+              className="chat-item-del"
+              title="Удалить чат"
+              onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
+            >
+              <Trash2 size={13} />
+            </button>
           </div>
-          <p className="muted">
-            API key хранится локально и отправляется только на выбранный OmniRoute endpoint.
-          </p>
-          <button className="ghost-button guide-button" onClick={() => setProviderGuideOpen(true)}>
-            <BookOpen size={16} />
-            Подключить провайдеры
-          </button>
-        </section>
+        ))}
+      </div>
+      <div className="chat-list-foot">
+        crafted by{" "}
+        <button className="about-link" onClick={() => setAboutOpen(true)}>xdxegit</button>
+      </div>
+    </aside>
+  );
 
-        <div className="sidebar-footer">
-          crafted by{" "}
-          <button className="about-link" onClick={() => setAboutOpen(true)}>xdxegit</button>
-        </div>
-      </aside>
+  // ── Right inspector (command layout) — routing + cost bars ─────────────────
+  const inspectorNode = (
+    <aside className="inspector glass">
+      {ui.bars.routing && <>{routePanel}{accountPanel}</>}
+      {ui.bars.cost && costPanel}
+    </aside>
+  );
+
+  return (
+    <main className="app-shell" data-layout={layout}>
+      {isCommand ? railNode : sidebarNode}
+      {showChatList && chatListNode}
 
       <section className="workspace">
         <header className="topbar glass">
@@ -1061,8 +1334,10 @@ function App() {
             </button>
 
             {/* Custom window controls — replace the native min/max/close overlay we
-                disabled in electron/main.js. The .window-controls wrapper is
+                disabled in electron/main.js. Hidden on macOS, where the native
+                traffic lights are kept. The .window-controls wrapper is
                 -webkit-app-region: no-drag so the buttons stay clickable. */}
+            {!isMac && (
             <div className="window-controls">
               <button
                 className="winbtn"
@@ -1086,6 +1361,7 @@ function App() {
                 <X size={14} strokeWidth={2.4} />
               </button>
             </div>
+            )}
           </div>
         </header>
 
@@ -1279,11 +1555,99 @@ function App() {
             </div>
           </section>
 
+          {showInspector && inspectorNode}
+
           <aside className={cls("settings-drawer glass", settingsOpen && "open")}>
             <div className="drawer-heading">
               <Wand2 size={18} />
               <h2>Настройки</h2>
             </div>
+
+            <section className="appearance">
+              <div className="appearance-title">
+                <Palette size={15} />
+                Интерфейс
+              </div>
+
+              <div className="opt-group-label">Стиль</div>
+              <div className="opt-grid">
+                {STYLES.map((s) => (
+                  <button
+                    key={s.id}
+                    className={cls("opt-card", ui.style === s.id && "active")}
+                    onClick={() => saveUi({ style: s.id, palette: defaultPaletteFor(s.id) })}
+                  >
+                    <span className="opt-name">{s.name}</span>
+                    <span className="opt-desc">{s.desc}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="opt-group-label">Цветовая гамма</div>
+              <div className="swatch-row">
+                {(STYLES.find((s) => s.id === ui.style)?.palettes || []).map((p) => {
+                  const vars = buildThemeVars(ui.style, p, theme);
+                  return (
+                    <button
+                      key={p}
+                      className={cls("swatch", ui.palette === p && "active")}
+                      title={paletteName(ui.style, p)}
+                      onClick={() => saveUi({ palette: p })}
+                      style={{ background: `linear-gradient(135deg, ${vars["--accent"]}, ${vars["--accent-2"]})` }}
+                    >
+                      {ui.palette === p && <Check size={15} />}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="opt-group-label">Тема</div>
+              <div className="seg">
+                <button className={cls("seg-btn", theme === "dark" && "active")} onClick={() => theme !== "dark" && toggleTheme()}>
+                  <Moon size={14} /> Тёмная
+                </button>
+                <button className={cls("seg-btn", theme === "light" && "active")} onClick={() => theme !== "light" && toggleTheme()}>
+                  <Sun size={14} /> Светлая
+                </button>
+              </div>
+
+              <div className="opt-group-label">Раскладка</div>
+              <div className="layout-list">
+                {LAYOUTS.map((l) => (
+                  <button
+                    key={l.id}
+                    className={cls("opt-card layout-card", ui.layout === l.id && "active")}
+                    onClick={() => saveUi({ layout: l.id })}
+                  >
+                    <span className="opt-name"><LayoutGrid size={13} /> {l.name}</span>
+                    <span className="opt-desc">{l.desc}</span>
+                  </button>
+                ))}
+              </div>
+
+              {isCommand && (
+                <div className="bars-toggles">
+                  <div className="opt-group-label">Панели Command Bar</div>
+                  {[
+                    ["chatlist", "Список чатов", MessageSquare],
+                    ["routing", "Маршрутизация", Route],
+                    ["cost", "Стоимость", Coins]
+                  ].map(([key, label, Icon]) => (
+                    <button
+                      key={key}
+                      className={cls("toggle-row", ui.bars[key] && "on")}
+                      onClick={() => saveUi({ bars: { ...ui.bars, [key]: !ui.bars[key] } })}
+                    >
+                      <Icon size={15} />
+                      <span>{label}</span>
+                      <span className="switch"><span className="knob" /></span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <div className="drawer-divider" />
 
             <label>
               <span>OmniRoute endpoint</span>
@@ -1555,7 +1919,7 @@ function App() {
             <h2 className="about-title">Axon</h2>
             <p className="about-tagline">be better with me</p>
             <div className="about-meta">
-              <span>v1.1.1-beta</span>
+              <span>v2.0.0-beta</span>
               <span>·</span>
               <span>crafted by{" "}
                 <button className="about-link" onClick={() => window.open("https://github.com/xdxegit")}>

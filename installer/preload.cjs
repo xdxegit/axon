@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('api', {
+  // "win32" | "darwin" | "linux" — drives platform-specific steps + chrome.
+  platform: process.platform,
   runStep:  (step) => ipcRenderer.invoke('run-step', step),
   minimize: ()     => ipcRenderer.send('window-minimize'),
   close:    ()     => ipcRenderer.send('window-close'),

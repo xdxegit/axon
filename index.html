@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Defense-in-depth CSP. The renderer never talks to the network directly
+         (all provider traffic goes through the main process over IPC), so
+         connect-src stays tight; ws:/127.0.0.1 cover Vite HMR in dev only. No
+         remote script origins are allowed, so any XSS that slips past React's
+         escaping still can't pull remote code into the omni/winctl bridges. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: http://127.0.0.1:5173; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
     <title>Axon</title>
   </head>
   <body>

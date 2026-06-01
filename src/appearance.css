@@ -1,0 +1,578 @@
+/* appearance.css — command rail, chat list, inspector, and the appearance
+   controls in the settings drawer. Loaded after styles.css. */
+
+/* ── Command rail (icon-only nav, command layout) ──────────────────────────── */
+.command-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 64px;
+  flex-shrink: 0;
+  padding: 12px 0;
+  border-width: 0 1px 0 0;
+}
+
+.rail-logo {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  margin-bottom: 8px;
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.35);
+}
+
+.rail-btn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rail-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--chip);
+}
+
+.rail-btn.active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.rail-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rail-spacer {
+  margin-top: auto;
+}
+
+.rail-avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-top: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--border-soft);
+  background: var(--chip);
+  color: var(--muted);
+}
+
+.rail-avatar:hover {
+  color: var(--text);
+}
+
+/* ── Chat list (sessions) ──────────────────────────────────────────────────── */
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  width: 234px;
+  flex-shrink: 0;
+  padding: 14px 10px 0;
+  border-width: 0 1px 0 0;
+}
+
+.chat-list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 12px;
+}
+
+.chat-list-title {
+  font-weight: 740;
+  font-size: 16px;
+}
+
+.chat-list-new {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  border: 1px solid var(--border-soft);
+  background: var(--chip);
+  color: var(--muted);
+}
+
+.chat-list-new:hover {
+  color: var(--text);
+}
+
+.chat-search {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 7px;
+  margin: 0 4px 10px;
+  padding: 8px 11px;
+  border-radius: 11px;
+  border: 1px solid var(--border-soft);
+  background: var(--chip);
+  color: var(--faint);
+}
+
+.chat-search input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.chat-search input::placeholder {
+  color: var(--faint);
+}
+
+.chat-list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 2px;
+}
+
+.chat-list-empty {
+  padding: 14px 10px;
+  color: var(--faint);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.chat-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  margin-bottom: 2px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.13s ease, border-color 0.13s ease;
+}
+
+.chat-item:hover {
+  background: var(--chip);
+}
+
+.chat-item.active {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.25);
+}
+
+.chat-item-icon {
+  color: var(--faint);
+}
+
+.chat-item.active .chat-item-icon {
+  color: var(--accent);
+}
+
+.chat-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chat-item.active .chat-item-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.chat-item-del {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+
+.chat-item:hover .chat-item-del {
+  opacity: 1;
+}
+
+.chat-item-del:hover {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.chat-list-foot {
+  padding: 11px 8px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--faint);
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* ── Right inspector (command layout) ──────────────────────────────────────── */
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 280px;
+  flex-shrink: 0;
+  padding: 16px;
+  overflow-y: auto;
+  border-width: 0 0 0 1px;
+}
+
+.inspector .panel {
+  margin: 0;
+}
+
+/* ── Cost panel ────────────────────────────────────────────────────────────── */
+.cost-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.cost-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 12px;
+}
+
+.cost-name {
+  color: var(--muted);
+}
+
+.cost-val {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cost-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--chip);
+  overflow: hidden;
+}
+
+.cost-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.cost-total {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.cost-total-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 9px;
+}
+
+.cost-total-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cost-total-head strong {
+  font-size: 18px;
+}
+
+.cost-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+/* ── Appearance section in the settings drawer ─────────────────────────────── */
+.appearance {
+  margin-bottom: 18px;
+}
+
+.appearance-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-weight: 740;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.opt-group-label {
+  margin: 14px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--faint);
+}
+
+.opt-group-label:first-of-type {
+  margin-top: 0;
+}
+
+.opt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.opt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid var(--border-soft);
+  background: var(--panel-soft);
+  text-align: left;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.14s ease;
+}
+
+.opt-card:hover {
+  transform: translateY(-1px);
+}
+
+.opt-card.active {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.opt-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 680;
+  color: var(--text);
+}
+
+.opt-desc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.layout-list {
+  display: grid;
+  gap: 8px;
+}
+
+.layout-card {
+  flex-direction: column;
+}
+
+/* Color swatches */
+.swatch-row {
+  display: flex;
+  gap: 10px;
+}
+
+.swatch {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  border: 2px solid transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px var(--shadow);
+  transition: transform 0.14s ease;
+}
+
+.swatch:hover {
+  transform: translateY(-2px);
+}
+
+.swatch.active {
+  border-color: var(--text);
+}
+
+/* Segmented control (theme) */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 13px;
+  border: 1px solid var(--border-soft);
+  background: var(--panel-soft);
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 640;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.seg-btn.active {
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+/* Bar toggles (command layout) */
+.bars-toggles {
+  margin-top: 4px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 7px;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.toggle-row.on {
+  color: var(--text);
+  border-color: rgba(var(--accent-rgb), 0.3);
+}
+
+.toggle-row .switch {
+  margin-left: auto;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--chip);
+  border: 1px solid var(--border-soft);
+  transition: background 0.16s ease;
+  flex-shrink: 0;
+}
+
+.toggle-row.on .switch {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color: transparent;
+}
+
+.toggle-row .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.16s ease;
+}
+
+.toggle-row.on .knob {
+  transform: translateX(16px);
+}
+
+.drawer-divider {
+  height: 1px;
+  margin: 4px 0 18px;
+  background: var(--border-soft);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   Cross-platform chrome + responsive layout (Windows / macOS / Linux, any size)
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* macOS: native traffic lights live top-left over the first column. Pad the rail
+   and chat-list so their top content clears the lights (the sidebar's 54px top
+   already does). The custom .window-controls cluster is not rendered on macOS. */
+:root[data-platform="darwin"] .command-rail,
+:root[data-platform="darwin"] .chat-list {
+  padding-top: 42px;
+}
+
+/* On macOS the whole top bar should stay draggable up to the traffic lights;
+   nudge the model picker right a touch in the command layout's narrow center. */
+:root[data-platform="darwin"][data-layout="command"] .topbar {
+  padding-left: 22px;
+}
+
+/* The settings drawer becomes an overlay on smaller windows so it never squeezes
+   the chat column into nothing (important for the 3-column command layout). */
+@media (max-width: 1240px) {
+  .settings-drawer.open {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    z-index: 60;
+    box-shadow: -18px 0 60px var(--shadow);
+  }
+}
+
+/* Tighten the auxiliary columns before they crowd the conversation. */
+@media (max-width: 1100px) {
+  .chat-list {
+    width: 210px;
+  }
+  .inspector {
+    width: 252px;
+  }
+}
+
+/* Very narrow / small screens: drop the inspector and chat-list to keep the chat
+   usable. Users can re-enable them when the window grows. Classic layout (single
+   sidebar) keeps working down to the 880px min window width. */
+@media (max-width: 920px) {
+  .inspector {
+    display: none;
+  }
+  :root[data-layout="command"] .chat-list {
+    display: none;
+  }
+  .sidebar {
+    width: 248px;
+  }
+}
+
+/* Short windows: let the sidebar scroll instead of clipping its panels. */
+@media (max-height: 680px) {
+  .messages {
+    padding-top: 18px;
+  }
+}
+
+/* Honour reduced-motion across every platform. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

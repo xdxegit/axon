@@ -1,8 +1,9 @@
 {
   "name": "axon",
-  "version": "1.1.1-beta",
+  "version": "2.0.0-beta",
   "private": true,
   "description": "Desktop AI workspace powered by OmniRoute.",
+  "author": "xdxegit <noreply@axon.studio>",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -16,7 +17,9 @@
     "dist:setup": "npm run build && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder --win nsis --x64 && cd installer && npm install && npm run dist",
     "dist:cross:linux": "npm run build && electron-builder --config build/electron-builder.cross.json --linux",
     "dist:cross:mac": "npm run build && electron-builder --config build/electron-builder.cross.json --mac",
-    "dist:cross": "npm run build && electron-builder --config build/electron-builder.cross.json --linux --mac"
+    "dist:cross": "npm run build && electron-builder --config build/electron-builder.cross.json --linux --mac",
+    "dist:auto": "npm run build && electron-builder",
+    "pack": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
@@ -59,6 +62,35 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Axon",
       "runAfterFinish": true
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    },
+    "linux": {
+      "category": "Utility",
+      "maintainer": "xdxegit <noreply@axon.studio>",
+      "synopsis": "Desktop AI workspace powered by OmniRoute.",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "Axon"
+        }
+      },
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "rpm", "arch": ["x64"] },
+        { "target": "tar.gz", "arch": ["x64"] }
+      ],
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     }
   }
 }

@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld("omni", {
 // Custom window-control bridge — paired with the frameless BrowserWindow and the
 // .window-controls cluster in the renderer.
 contextBridge.exposeInMainWorld("winctl", {
+  // Renderer uses this to hide the custom min/max/close cluster on macOS (where
+  // we keep the native traffic lights) and to pad the top bar accordingly.
+  platform: process.platform,
   minimize: () => ipcRenderer.send("window:minimize"),
   toggleMaximize: () => ipcRenderer.send("window:toggle-maximize"),
   close: () => ipcRenderer.send("window:close"),
