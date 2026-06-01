@@ -60,6 +60,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      # Only the Axon Glow wizard ships in the Release. The native installers are
+      # still built above (Glow embeds this OS's one as a resource) but are not
+      # uploaded/published — Glow is the single entry point for users.
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -67,16 +70,8 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
           path: |
-            release/*.exe
-            release/*.dmg
-            release/*.zip
-            release/*.AppImage
-            release/*.deb
-            release/*.rpm
-            release/*.tar.gz
             release-installer-*/*.exe
             release-installer-*/*.dmg
-            release-installer-*/*.zip
             release-installer-*/*.AppImage
 
   publish:
@@ -97,10 +92,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           fail_on_unmatched_files: false
           files: |
-            dist/**/*.exe
-            dist/**/*.dmg
-            dist/**/*.zip
-            dist/**/*.AppImage
-            dist/**/*.deb
-            dist/**/*.rpm
-            dist/**/*.tar.gz
+            dist/**/Axon-Glow-*.exe
+            dist/**/Axon-Glow-*.dmg
+            dist/**/Axon-Glow-*.AppImage

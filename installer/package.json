@@ -45,8 +45,7 @@
       "category": "public.app-category.utilities",
       "identity": null,
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] },
-        { "target": "zip", "arch": ["x64", "arm64"] }
+        { "target": "dmg", "arch": ["x64", "arm64"] }
       ],
       "artifactName": "Axon-Glow-${version}-mac-${arch}.${ext}",
       "extraResources": [
